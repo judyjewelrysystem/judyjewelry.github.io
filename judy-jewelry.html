@@ -487,6 +487,8 @@ async function renderDashboard(pc){
   const pendingR=r.filter(x=>x.status!=='done').length;
   const consignIn=b.filter(x=>x.status==='borrowed'&&x.direction==='in').length;
   const consignOut=b.filter(x=>x.status==='borrowed'&&x.direction==='out').length;
+  const now2=new Date();now2.setHours(0,0,0,0);
+  const overdueCount=b.filter(x=>x.status==='borrowed'&&x.expected_return&&new Date(x.expected_return)<now2).length;
   const catMap={};activeP.forEach(x=>{if(x.category)catMap[x.category]=(catMap[x.category]||0)+1;});
 
   // Monthly 6 months
@@ -502,6 +504,7 @@ async function renderDashboard(pc){
     <div class="stat"><div class="stat-l">待維修</div><div class="stat-v" style="color:${pendingR>0?'#c0392b':'#16a34a'}">${pendingR} 筆</div></div>
     <div class="stat"><div class="stat-l">廠商寄賣中</div><div class="stat-v" style="color:var(--accent)">${consignIn} 件</div></div>
     <div class="stat"><div class="stat-l">外借商品中</div><div class="stat-v" style="color:var(--accent2,var(--accent))">${consignOut} 件</div></div>
+    <div class="stat"><div class="stat-l">⚠️ 逾期未還</div><div class="stat-v" style="color:${overdueCount>0?'#c0392b':'#16a34a'}">${overdueCount} 筆</div></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
     <div class="card"><div class="card-title">📈 近6月銷售走勢</div><div style="height:200px"><canvas id="ch-line"></canvas></div></div>
@@ -596,9 +599,14 @@ window.openProdModal=async(id)=>{
         <option value="out"${p?.direction==='out'?' selected':''}>外借商品（我→廠商）</option>
       </select>
     </div>
-    <div class="fg" id="pm-sup-wrap" style="${p?.direction&&p.direction!=='own'?'':'display:none'}">
-      <label class="fl">關聯廠商</label>
-      <select class="fc" id="pm-sup"><option value="">請選擇廠商</option>${invSups.map(s=>`<option value="${s.id}"${p?.borrow_supplier_id===s.id?' selected':''}>${s.name}</option>`).join('')}</select>
+    <div id="pm-sup-wrap" style="${p?.direction&&p.direction!=='own'?'':'display:none'}">
+      <div class="fg"><label class="fl">關聯廠商</label>
+        <select class="fc" id="pm-sup"><option value="">請選擇廠商</option>${invSups.map(s=>`<option value="${s.id}" data-name="${s.name}"${p?.borrow_supplier_id===s.id?' selected':''}>${s.name}</option>`).join('')}</select>
+      </div>
+      <div class="fgrid">
+        <div class="fg"><label class="fl">📅 借貨日期</label><input class="fc" id="pm-bdate" type="date" value="${p?.borrow_date||new Date().toISOString().split('T')[0]}"></div>
+        <div class="fg"><label class="fl">📅 預計歸還日期</label><input class="fc" id="pm-rdate" type="date" value="${p?.borrow_return_date||''}"></div>
+      </div>
     </div>
   </div>
   <div class="fg"><label class="fl">商品描述</label><textarea class="fc" id="pm-desc">${p?.description||''}</textarea></div>
@@ -618,9 +626,11 @@ window.openProdModal=async(id)=>{
     if(!name){showAlert('pm-a','err','請填寫商品名稱');return;}
     const stock=parseInt(document.getElementById('pm-stock').value)||0;
     const dir=document.getElementById('pm-dir').value;
-    const supId=document.getElementById('pm-sup')?.value||'';
+    const supId=dir!=='own'?(document.getElementById('pm-sup')?.value||''):'';
+    const borrowDate=dir!=='own'?(document.getElementById('pm-bdate')?.value||''):'';
+    const returnDate=dir!=='own'?(document.getElementById('pm-rdate')?.value||''):'';
     const cost=isBoss?parseFloat(document.getElementById('pm-cost').value)||0:null;
-    const payload={name,sku:document.getElementById('pm-sku').value.trim(),category:document.getElementById('pm-cat').value,material:document.getElementById('pm-mat').value,price,stock,status:stock<=0?'inactive':'active',description:document.getElementById('pm-desc').value,image1:document.getElementById('pm-img1').value||null,image2:document.getElementById('pm-img2').value||null,direction:dir,borrow_supplier_id:supId||null,is_borrowed:dir!=='own',updated_at:new Date().toISOString()};
+    const payload={name,sku:document.getElementById('pm-sku').value.trim(),category:document.getElementById('pm-cat').value,material:document.getElementById('pm-mat').value,price,stock,status:stock<=0?'inactive':'active',description:document.getElementById('pm-desc').value,image1:document.getElementById('pm-img1').value||null,image2:document.getElementById('pm-img2').value||null,direction:dir,borrow_supplier_id:supId||null,is_borrowed:dir!=='own',borrow_date:borrowDate||null,borrow_return_date:returnDate||null,updated_at:new Date().toISOString()};
     if(cost!==null)payload.cost=cost;
     if(p){await sb.from('judy_products').update(payload).eq('id',p.id);}
     else{
@@ -633,7 +643,7 @@ window.openProdModal=async(id)=>{
       // Create borrow record
       if(dir!=='own'&&supId&&nd){
         const sName=invSups.find(s=>s.id===supId)?.name||'';
-        await sb.from('judy_borrow_records').insert({product_id:nd.id,product_name:name,product_sku:payload.sku,supplier_id:supId,supplier_name:sName,direction:dir,status:'borrowed',borrow_date:new Date().toISOString().split('T')[0]});
+        await sb.from('judy_borrow_records').insert({product_id:nd.id,product_name:name,product_sku:payload.sku,supplier_id:supId,supplier_name:sName,direction:dir,status:'borrowed',borrow_date:borrowDate||new Date().toISOString().split('T')[0],expected_return:returnDate||null});
       }
     }
     flash('ok',p?'商品已更新！':'商品已新增！');closeModal();renderInventory(document.getElementById('pc'));

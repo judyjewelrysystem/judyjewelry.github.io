@@ -305,6 +305,11 @@ async function renderOverview(pc){
     <div class="stat"><div class="stat-l">歷史歸還</div><div class="stat-v">${returned.length} 筆</div></div>
     <div class="stat"><div class="stat-l">合作廠商</div><div class="stat-v">${(sups||[]).length} 家</div></div>
   </div>
+  ${overdueList.length>0?`<a href="#" onclick="navigate('overdue');return false;" style="display:flex;align-items:center;gap:10px;background:linear-gradient(135deg,#fee2e2,#fecaca);border:1px solid #fca5a5;border-radius:12px;padding:14px 16px;margin-bottom:16px;text-decoration:none;cursor:pointer">
+    <span style="font-size:24px">⚠️</span>
+    <div><div style="font-weight:900;color:#c0392b;font-size:14px">有 ${overdueList.length} 筆借貨已逾期未歸還！</div>
+    <div style="font-size:12px;color:#991b1b;margin-top:2px">點此查看逾期清單 →</div></div>
+  </a>`:''}
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
     <div class="card"><div class="card-title">📊 各廠商借貨數量</div><div style="height:200px"><canvas id="ch-sup"></canvas></div></div>
     <div class="card"><div class="card-title">📋 最新動態</div>
@@ -403,13 +408,22 @@ async function renderBorrowList(pc,direction,title,subtitle){
   document.getElementById('bl-st').onchange=render;
 
   window.markReturn=async(id,pid)=>{
-    const d=prompt('請輸入歸還日期 (YYYY-MM-DD):',new Date().toISOString().split('T')[0]);
-    if(!d)return;
-    await sb.from('judy_borrow_records').update({actual_return:d,status:'returned'}).eq('id',id);
-    if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own'}).eq('id',pid);
-    flash('ok','✅ 已標記歸還，庫存已更新');
-    loadOverdueBadge();
-    renderBorrowList(document.getElementById('pc'),direction,title,subtitle);
+    const today=new Date().toISOString().split('T')[0];
+    openModal('📦 確認歸還',`
+      <div style="padding:10px 14px;background:var(--accent-light);border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:700">確認標記此商品已歸還？</div>
+      <div class="fg"><label class="fl">✅ 實際歸還日期</label><input class="fc" id="ret-date" type="date" value="${today}"></div>
+      <div class="flex gap2" style="justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-s" onclick="closeModal()">取消</button>
+        <button class="btn btn-g" id="ret-confirm">📦 確認歸還</button>
+      </div>`);
+    document.getElementById('ret-confirm').onclick=async()=>{
+      const d=document.getElementById('ret-date').value||today;
+      await sb.from('judy_borrow_records').update({actual_return:d,status:'returned'}).eq('id',id);
+      if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own'}).eq('id',pid);
+      flash('ok','✅ 已標記歸還！');closeModal();
+      loadOverdueBadge();
+      renderBorrowList(document.getElementById('pc'),direction,title,subtitle);
+    };
   };
 
   window.markSold=async(id,productName,supplierName,supplierId,productId)=>{
@@ -475,10 +489,11 @@ window.openBorrowModal=async(id,direction)=>{
     <select class="fc" id="bm-sup"><option value="">請選擇廠商</option>${(sups||[]).map(s=>`<option value="${s.id}" data-name="${s.name}"${rec?.supplier_id===s.id?' selected':''}>${s.name}</option>`).join('')}</select>
   </div>
   <div class="fgrid">
-    <div class="fg"><label class="fl">借出日期</label><input class="fc" id="bm-bdate" type="date" value="${rec?.borrow_date||new Date().toISOString().split('T')[0]}"></div>
-    <div class="fg"><label class="fl">預計歸還日期</label><input class="fc" id="bm-edate" type="date" value="${rec?.expected_return||''}"></div>
-    ${rec?.actual_return?`<div class="fg"><label class="fl">實際歸還日期</label><input class="fc" id="bm-adate" type="date" value="${rec.actual_return}"></div>`:''}
+    <div class="fg"><label class="fl">📅 借出日期 *</label><input class="fc" id="bm-bdate" type="date" value="${rec?.borrow_date||new Date().toISOString().split('T')[0]}"></div>
+    <div class="fg"><label class="fl">📅 預計歸還日期 *</label><input class="fc" id="bm-edate" type="date" value="${rec?.expected_return||''}" placeholder="請務必填寫"></div>
+    <div class="fg"><label class="fl">✅ 實際歸還日期</label><input class="fc" id="bm-adate" type="date" value="${rec?.actual_return||''}"></div>
   </div>
+  ${rec?.expected_return&&isOverdue(rec.expected_return)&&rec?.status==='borrowed'?`<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-weight:700;color:#c0392b;font-size:13px">⚠️ 此商品已逾期 ${daysDiff(rec.expected_return)} 天未歸還！</div>`:''}
   <div class="fg"><label class="fl">備註</label><textarea class="fc" id="bm-note" rows="2">${rec?.note||''}</textarea></div>
   <div class="flex gap2" style="justify-content:flex-end">
     <button class="btn btn-s" onclick="closeModal()">取消</button>
@@ -515,8 +530,8 @@ window.openBorrowModal=async(id,direction)=>{
       borrow_date:document.getElementById('bm-bdate').value||null,
       expected_return:document.getElementById('bm-edate').value||null,
       actual_return:document.getElementById('bm-adate')?.value||null,
-      note:document.getElementById('bm-note').value,
-      status:rec?.status||'borrowed'
+      status:document.getElementById('bm-adate')?.value?'returned':(rec?.status||'borrowed'),
+      note:document.getElementById('bm-note').value
     };
     if(rec){
       await sb.from('judy_borrow_records').update(payload).eq('id',rec.id);
@@ -596,11 +611,20 @@ async function renderOverdue(pc){
   </table></div></div>`:''}`;
 
   window.markReturn=async(id,pid)=>{
-    const d=prompt('請輸入歸還日期 (YYYY-MM-DD):',new Date().toISOString().split('T')[0]);
-    if(!d)return;
-    await sb.from('judy_borrow_records').update({actual_return:d,status:'returned'}).eq('id',id);
-    if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own'}).eq('id',pid);
-    flash('ok','✅ 已標記歸還');loadOverdueBadge();renderOverdue(pc);
+    const today=new Date().toISOString().split('T')[0];
+    openModal('📦 確認歸還',`
+      <div style="padding:10px 14px;background:var(--accent-light);border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:700">確認標記此商品已歸還？</div>
+      <div class="fg"><label class="fl">✅ 實際歸還日期</label><input class="fc" id="ret-date" type="date" value="${today}"></div>
+      <div class="flex gap2" style="justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-s" onclick="closeModal()">取消</button>
+        <button class="btn btn-g" id="ret-confirm">📦 確認歸還</button>
+      </div>`);
+    document.getElementById('ret-confirm').onclick=async()=>{
+      const d=document.getElementById('ret-date').value||today;
+      await sb.from('judy_borrow_records').update({actual_return:d,status:'returned'}).eq('id',id);
+      if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own'}).eq('id',pid);
+      flash('ok','✅ 已標記歸還！');closeModal();loadOverdueBadge();renderOverdue(pc);
+    };
   };
 }
 
