@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JUDY珠寶 廠商借還記錄</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600;700;900&display=swap">
+<style>
+:root{
+  --bg:#f4f4f6;--bg2:#fff;--sidebar:#fff;--topbar:#fff;
+  --card:#fff;--border:#eaeaea;--border2:#f0f0f0;
+  --text:#111;--text2:#555;--text3:#888;
+  --accent:#111;--accent2:#333;--accent-light:#f0f0f0;
+  --btn-bg:linear-gradient(135deg,#333,#111);--btn-text:#fff;
+  --nav-active:#f5f5f5;--nav-border:#111;--sheen:none;
+}
+[data-theme="rose"]{--bg:linear-gradient(145deg,#f8e8ea,#f5d0d8,#f0c8d4,#edd4c8);--bg2:rgba(255,255,255,0.6);--sidebar:rgba(255,255,255,0.3);--topbar:rgba(255,255,255,0.35);--card:rgba(255,255,255,0.55);--border:rgba(201,133,106,0.25);--border2:rgba(201,133,106,0.15);--text:#5a2a34;--text2:#8b4a5a;--text3:#c9856a;--accent:#8b3a4a;--accent2:#c9856a;--accent-light:rgba(201,133,106,0.12);--btn-bg:linear-gradient(135deg,#c9856a,#8b3a4a);--btn-text:#fff;--nav-active:rgba(255,255,255,0.6);--nav-border:#c9856a;--sheen:linear-gradient(115deg,rgba(255,255,255,0.38) 0%,rgba(255,255,255,0.04) 45%,rgba(201,133,106,0.15) 65%,rgba(255,255,255,0.22) 100%)}
+[data-theme="latte"]{--bg:linear-gradient(145deg,#e8ddd2,#d4c4b0,#c8b89a,#d8caba,#ece0d0);--bg2:rgba(255,248,235,0.55);--sidebar:rgba(255,248,235,0.28);--topbar:rgba(255,248,235,0.32);--card:rgba(255,248,230,0.5);--border:rgba(200,160,80,0.28);--border2:rgba(200,160,80,0.15);--text:#5a3c18;--text2:#7a5530;--text3:#9a7030;--accent:#c8a050;--accent2:#a07828;--accent-light:rgba(200,160,80,0.15);--btn-bg:linear-gradient(135deg,#d4a840,#a07828);--btn-text:#fff5e0;--nav-active:rgba(255,248,230,0.6);--nav-border:#c8a050;--sheen:linear-gradient(115deg,rgba(255,255,255,0.38) 0%,rgba(255,255,255,0.04) 45%,rgba(210,180,130,0.18) 65%,rgba(255,255,255,0.22) 100%)}
+[data-theme="lavender"]{--bg:linear-gradient(145deg,#ddd5f0,#c8bce8,#b8a8e0,#cec0ea,#e4dcf8);--bg2:rgba(248,242,255,0.5);--sidebar:rgba(248,242,255,0.25);--topbar:rgba(248,242,255,0.28);--card:rgba(248,242,255,0.48);--border:rgba(180,165,230,0.28);--border2:rgba(180,165,230,0.15);--text:#3a2870;--text2:#5848a0;--text3:#7058b0;--accent:#8070c8;--accent2:#6858b0;--accent-light:rgba(128,112,200,0.15);--btn-bg:linear-gradient(135deg,#9880d8,#6858b0);--btn-text:#f0ecff;--nav-active:rgba(248,242,255,0.6);--nav-border:#8070c8;--sheen:linear-gradient(115deg,rgba(255,255,255,0.42) 0%,rgba(255,255,255,0.04) 45%,rgba(180,155,230,0.18) 65%,rgba(255,255,255,0.28) 100%)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans TC',sans-serif;background:var(--bg);min-height:100vh;color:var(--text)}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:var(--accent2,#ccc);border-radius:3px}
+.sheen-layer{position:fixed;inset:0;background:var(--sheen);pointer-events:none;z-index:0}
+.app{display:flex;min-height:100vh}
+.sidebar{width:210px;min-height:100vh;position:fixed;left:0;top:0;z-index:100;background:var(--sidebar);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border-right:1px solid var(--border);display:flex;flex-direction:column;transition:transform .3s}
+.main{margin-left:210px;flex:1;display:flex;flex-direction:column;min-height:100vh;position:relative;z-index:1}
+.topbar{height:56px;background:var(--topbar);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;position:sticky;top:0;z-index:50;gap:12px}
+.page{padding:20px;flex:1}
+.logo{padding:16px 14px;border-bottom:1px solid var(--border2)}
+.nav{padding:8px 6px;flex:1;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:8px;padding:10px 11px;border-radius:8px;font-size:13px;font-weight:700;color:var(--text2);cursor:pointer;margin-bottom:2px;border:none;background:none;width:100%;text-align:left;transition:all .15s;font-family:inherit}
+.nav-item:hover{background:var(--accent-light)}
+.nav-item.active{background:var(--nav-active);color:var(--text);border-left:3px solid var(--nav-border);padding-left:8px}
+.nav-link{display:flex;align-items:center;gap:8px;padding:9px 11px;border-radius:8px;font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-light);border:1px dashed var(--border);margin:6px 4px;text-decoration:none}
+.user-area{padding:12px 14px;border-top:1px solid var(--border2)}
+.ua-btn{margin-top:6px;width:100%;padding:8px;border-radius:7px;border:1px solid var(--border);background:var(--accent-light);color:var(--text);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+.logout-btn{background:var(--btn-bg);color:var(--btn-text);border:none;margin-top:5px}
+.card{background:var(--card);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-radius:14px;border:1px solid var(--border);padding:18px;margin-bottom:14px}
+.card-title{font-size:15px;font-weight:900;color:var(--text);margin-bottom:14px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px}
+.stat{background:var(--card);border-radius:12px;padding:14px 10px;text-align:center;border:1px solid var(--border)}
+.stat-l{font-size:11px;font-weight:700;color:var(--text3);margin-bottom:5px}
+.stat-v{font-size:18px;font-weight:900;color:var(--text)}
+.btn{padding:9px 16px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:5px;transition:opacity .2s;font-family:inherit}
+.btn:hover{opacity:.85}
+.btn-p{background:var(--btn-bg);color:var(--btn-text)}
+.btn-s{background:var(--accent-light);color:var(--text);border:1px solid var(--border)}
+.btn-d{background:#fee2e2;color:#c0392b;border:1px solid #fca5a5}
+.btn-w{background:#fff3cd;color:#856404;border:1px solid #fcd34d}
+.btn-g{background:#dcfce7;color:#16a34a;border:1px solid #86efac}
+.btn-sm{padding:6px 11px;font-size:12px}
+.btn-xs{padding:4px 9px;font-size:11px}
+.fg{margin-bottom:12px}
+.fl{display:block;font-size:13px;font-weight:700;color:var(--text);margin-bottom:5px}
+.fc{width:100%;padding:10px 13px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;font-family:inherit;outline:none;transition:border .2s}
+.fc:focus{border-color:var(--accent)}
+textarea.fc{resize:vertical;min-height:70px}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:10px}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:500px}
+th{background:var(--accent-light);color:var(--text);padding:11px 12px;font-size:12px;font-weight:800;text-align:left;white-space:nowrap;border-bottom:2px solid var(--border)}
+td{padding:10px 12px;border-bottom:1px solid var(--border2);vertical-align:middle;color:var(--text2)}
+tr:hover td{background:var(--accent-light)}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800}
+.b-in{background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}
+.b-out{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
+.b-ret{background:#dcfce7;color:#16a34a;border:1px solid #86efac}
+.b-over{background:#fee2e2;color:#c0392b;border:1px solid #fca5a5}
+.b-sold{background:#f3e8ff;color:#7c3aed;border:1px solid #c4b5fd}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(4px)}
+.mbox{background:var(--bg2,#fff);border-radius:16px;padding:22px;width:100%;max-width:540px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.2);border:1px solid var(--border)}
+.mbox.wide{max-width:700px}
+.mtitle{font-size:17px;font-weight:900;color:var(--text);margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+.mclose{cursor:pointer;font-size:20px;color:var(--text3);background:none;border:none;font-weight:900}
+.alert{padding:11px 14px;border-radius:8px;margin-bottom:12px;font-weight:700;font-size:13px}
+.alert-ok{background:#dcfce7;color:#16a34a;border:1px solid #86efac}
+.alert-err{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+.ptitle{font-size:19px;font-weight:900;color:var(--text);margin-bottom:16px}
+.sb{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.sb input,.sb select{flex:1;min-width:150px}
+.tabs{display:flex;gap:4px;margin-bottom:16px;background:var(--accent-light);padding:4px;border-radius:12px;border:1px solid var(--border)}
+.tab{flex:1;padding:9px;text-align:center;border-radius:9px;font-weight:800;font-size:13px;color:var(--text2);border:none;background:none;cursor:pointer;font-family:inherit}
+.tab.active{background:var(--card);color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,0.08)}
+.overdue-banner{background:linear-gradient(135deg,#fee2e2,#fecaca);border:1px solid #fca5a5;border-radius:12px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+.theme-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.theme-btn{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent}
+.theme-btn:hover,.theme-btn.active{border-color:var(--text);transform:scale(1.15)}
+.drop{position:absolute;z-index:30;width:100%;background:var(--bg2,#fff);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.12);max-height:200px;overflow-y:auto;display:none}
+.drop-item{padding:9px 13px;cursor:pointer;font-size:13px;font-weight:700;border-bottom:1px solid var(--border2)}
+.drop-item:hover{background:var(--accent-light)}
+hr.dv{border:none;border-top:1px solid var(--border2);margin:10px 0}
+.flex{display:flex}.aic{align-items:center}.jsb{justify-content:space-between}.gap2{gap:8px}.gap3{gap:12px}.mb2{margin-bottom:8px}.mb3{margin-bottom:12px}.w100{width:100%}
+.menu-btn{display:none;background:none;border:none;font-size:26px;cursor:pointer;color:var(--text)}
+.mob-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:99}
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,0.15)}
+  .main{margin-left:0}.menu-btn{display:block}.mob-ov.show{display:block}
+  .fgrid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(2,1fr)}
+  .page{padding:12px}.overlay{padding:0;align-items:flex-end}
+  .mbox{border-radius:16px 16px 0 0;max-width:100%;max-height:92vh}.fc{font-size:16px}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="flash" style="position:fixed;top:70px;right:16px;z-index:999;max-width:300px"></div>
+<script>
+const SURL='https://yldewrgtcuxiykorjiam.supabase.co';
+const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsZGV3cmd0Y3V4aXlrb3JqaWFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxMjYzODAsImV4cCI6MjA5NTcwMjM4MH0.FhdWhs92TdGrzSDGlB-KW6t2e-EYgCY9t-BVjnaAdss';
+const sb=supabase.createClient(SURL,SKEY);
+
+const SESS='judy_v4';
+const THEME_KEY='judy_theme';
+const PAY_METHODS=['現金','刷卡','轉帳','LINE Pay','貨到付款','微信支付','支付寶'];
+const THEMES={white:{bg:''},rose:{bg:'rose'},latte:{bg:'latte'},lavender:{bg:'lavender'}};
+const THEME_COLORS={white:'#fff',rose:'linear-gradient(135deg,#f5d0d8,#c9856a)',latte:'linear-gradient(135deg,#ece0d0,#c8a050)',lavender:'linear-gradient(135deg,#e4dcf8,#8070c8)'};
+
+let currentUser=null;
+let sideOpen=false;
+let curPage='overview';
+let activeCharts=[];
+
+const fmt=n=>n==null?'—':'NT$'+Number(n).toLocaleString('zh-TW');
+const fmtD=d=>d?new Date(d).toLocaleDateString('zh-TW'):'—';
+const isOverdue=d=>{if(!d)return false;return new Date(d)<new Date();};
+const daysDiff=d=>{if(!d)return 0;return Math.floor((new Date()-new Date(d))/(1000*60*60*24));};
+const getS=()=>{try{return JSON.parse(localStorage.getItem(SESS))}catch{return null}};
+const saveS=u=>localStorage.setItem(SESS,JSON.stringify(u));
+const clearS=()=>localStorage.removeItem(SESS);
+
+function flash(type,msg){
+  const d=document.getElementById('flash');
+  d.innerHTML=`<div class="alert alert-${type==='ok'?'ok':'err'}" style="box-shadow:0 4px 20px rgba(0,0,0,0.1)">${msg}</div>`;
+  setTimeout(()=>{if(d)d.innerHTML=''},3000);
+}
+function openModal(title,html,wide=false){
+  document.getElementById('modal-ov')?.remove();
+  const ov=document.createElement('div');ov.className='overlay';ov.id='modal-ov';
+  ov.innerHTML=`<div class="mbox${wide?' wide':''}"><div class="mtitle">${title}<button class="mclose" id="mcl">×</button></div><div id="mbody">${html}</div></div>`;
+  document.body.appendChild(ov);
+  document.getElementById('mcl').onclick=closeModal;
+  ov.onclick=e=>{if(e.target===ov)closeModal();};
+  return document.getElementById('mbody');
+}
+function closeModal(){document.getElementById('modal-ov')?.remove();}
+function showAlert(id,type,msg){const el=document.getElementById(id);if(el)el.innerHTML=`<div class="alert alert-${type==='ok'?'ok':'err'}">${msg}</div>`;}
+function applyTheme(t){
+  document.documentElement.dataset.theme=THEMES[t]?.bg||'';
+  localStorage.setItem(THEME_KEY,t);
+  document.querySelectorAll('.theme-btn').forEach(b=>b.classList.toggle('active',b.dataset.t===t));
+}
+function destroyCharts(){activeCharts.forEach(c=>{try{c.destroy()}catch{}});activeCharts=[];}
+function payMethodSelect(id,val=''){
+  return`<select class="fc" id="${id}"><option value="">選擇收款方式</option>${PAY_METHODS.map(m=>`<option${val===m?' selected':''}>${m}</option>`).join('')}</select>`;
+}
+
+// ===== RENDER APP =====
+function renderApp(){
+  const app=document.getElementById('app');
+  currentUser=getS();
+  if(!currentUser){renderLogin(app);return;}
+  applyTheme(localStorage.getItem(THEME_KEY)||'white');
+  renderLayout(app);
+}
+
+// ===== LOGIN =====
+function renderLogin(app){
+  app.innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)">
+    <div class="card" style="width:100%;max-width:380px;padding:36px 28px">
+      <div style="text-align:center;margin-bottom:24px">
+        <div style="font-size:38px">🏪</div>
+        <div style="font-size:18px;font-weight:900;color:var(--text);margin-top:6px">廠商借還記錄</div>
+        <div style="font-size:11px;color:var(--text3);letter-spacing:2px;font-weight:700">JUDY珠寶</div>
+      </div>
+      <div id="l-err"></div>
+      <div class="fg"><label class="fl">👤 帳號</label><input class="fc" id="l-u" placeholder="請輸入帳號" autocomplete="username"></div>
+      <div class="fg"><label class="fl">🔒 密碼</label><input class="fc" id="l-p" type="password" placeholder="請輸入密碼" autocomplete="current-password"></div>
+      <button class="btn btn-p w100" id="l-btn" style="justify-content:center;font-size:15px;padding:12px;margin-top:4px">🔑 登入</button>
+    </div></div>`;
+  const doLogin=async()=>{
+    const u=document.getElementById('l-u').value.trim(),p=document.getElementById('l-p').value;
+    if(!u||!p){showAlert('l-err','err','請填寫帳號與密碼');return;}
+    document.getElementById('l-btn').textContent='登入中...';
+    const{data,error}=await sb.from('judy_users').select('*').eq('username',u).maybeSingle();
+    document.getElementById('l-btn').textContent='🔑 登入';
+    if(error||!data){showAlert('l-err','err','帳號不存在');return;}
+    if(data.password!==p){showAlert('l-err','err','密碼錯誤');return;}
+    currentUser=data;saveS(data);renderApp();
+  };
+  document.getElementById('l-btn').onclick=doLogin;
+  document.getElementById('l-p').onkeydown=e=>{if(e.key==='Enter')doLogin();};
+}
+
+// ===== LAYOUT =====
+function renderLayout(app){
+  const isBoss=currentUser.role==='boss';
+  const navItems=[
+    {id:'overview',icon:'📋',label:'借還總覽'},
+    {id:'consign_in',icon:'📥',label:'廠商寄賣'},
+    {id:'consign_out',icon:'📤',label:'外借商品'},
+    {id:'returned',icon:'✅',label:'已歸還記錄'},
+    {id:'overdue',icon:'⚠️',label:'逾期警示'},
+    {id:'suppliers',icon:'🏪',label:'廠商管理'},
+    ...(isBoss?[{id:'settlement',icon:'💰',label:'結算管理'}]:[]),
+  ];
+  app.innerHTML=`
+  <div class="sheen-layer"></div>
+  <div class="mob-ov" id="mob-ov"></div>
+  <nav class="sidebar" id="sidebar">
+    <div class="logo">
+      <div style="font-size:22px;margin-bottom:4px">🏪</div>
+      <div style="font-size:14px;font-weight:900;color:var(--text)">廠商借還記錄</div>
+      <div style="font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--text3);margin-top:2px">JUDY珠寶</div>
+    </div>
+    <div class="nav" id="nav-list"></div>
+    <div class="user-area">
+      <div style="font-size:13px;font-weight:800;color:var(--text)">👤 ${currentUser.display_name}</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:1px">${{boss:'⭐ 老闆',manager:'🔰 主管',staff:'💼 員工'}[currentUser.role]}</div>
+      <div class="theme-btns">${Object.entries(THEME_COLORS).map(([k,v])=>`<div class="theme-btn" data-t="${k}" style="background:${v}" onclick="applyTheme('${k}')"></div>`).join('')}</div>
+      <a href="judy-jewelry.html" class="ua-btn" style="display:block;text-align:center;text-decoration:none;margin-top:6px">← 返回主系統</a>
+      <button class="ua-btn logout-btn" id="logout-btn">🚪 登出</button>
+    </div>
+  </nav>
+  <div class="main">
+    <div class="topbar">
+      <button class="menu-btn" id="menu-btn">☰</button>
+      <div id="tb-title" style="font-weight:900;font-size:15px;color:var(--text);flex:1;text-align:center"></div>
+      <div id="overdue-badge" style="display:none"></div>
+      <div style="font-size:11px;color:var(--text3);font-weight:700">${new Date().toLocaleDateString('zh-TW',{month:'long',day:'numeric'})}</div>
+    </div>
+    <div class="page" id="pc"></div>
+  </div>`;
+
+  const nl=document.getElementById('nav-list');
+  navItems.forEach(n=>{
+    const b=document.createElement('button');b.className='nav-item';b.id='nav-'+n.id;
+    b.innerHTML=`<span>${n.icon}</span>${n.label}`;
+    b.onclick=()=>navigate(n.id);
+    nl.appendChild(b);
+  });
+  document.getElementById('logout-btn').onclick=()=>{clearS();currentUser=null;renderApp();};
+  document.getElementById('menu-btn').onclick=()=>toggleSidebar();
+  document.getElementById('mob-ov').onclick=()=>toggleSidebar(false);
+  loadOverdueBadge();
+  navigate('overview');
+}
+
+function toggleSidebar(f){
+  sideOpen=f!==undefined?f:!sideOpen;
+  document.getElementById('sidebar')?.classList.toggle('open',sideOpen);
+  document.getElementById('mob-ov')?.classList.toggle('show',sideOpen);
+}
+function navigate(page){
+  curPage=page;sideOpen=false;toggleSidebar(false);destroyCharts();
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.toggle('active',b.id==='nav-'+page));
+  const nb=document.getElementById('nav-'+page);
+  if(nb)document.getElementById('tb-title').textContent=nb.textContent.trim();
+  const pc=document.getElementById('pc');
+  if(!pc)return;
+  pc.innerHTML='<div style="text-align:center;padding:40px;color:var(--text3);font-weight:700">⏳ 載入中...</div>';
+  ({overview:renderOverview,consign_in:renderConsignIn,consign_out:renderConsignOut,returned:renderReturned,overdue:renderOverdue,suppliers:renderSuppliers,settlement:renderSettlement})[page]?.(pc);
+}
+async function loadOverdueBadge(){
+  const{data}=await sb.from('judy_borrow_records').select('expected_return').eq('status','borrowed');
+  const n=(data||[]).filter(x=>x.expected_return&&isOverdue(x.expected_return)).length;
+  const badge=document.getElementById('overdue-badge');
+  const navBtn=document.getElementById('nav-overdue');
+  if(badge){
+    if(n>0){badge.style.display='block';badge.innerHTML=`<span style="background:#ef4444;color:#fff;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:800">⚠️ 逾期 ${n} 筆</span>`;}
+    else badge.style.display='none';
+  }
+  if(navBtn&&n>0)navBtn.innerHTML=`<span>⚠️</span>逾期警示 <span style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;margin-left:4px">${n}</span>`;
+}
+
+// ===== OVERVIEW =====
+async function renderOverview(pc){
+  const[{data:recs},{data:sups},{data:prods}]=await Promise.all([
+    sb.from('judy_borrow_records').select('*').order('created_at',{ascending:false}),
+    sb.from('judy_suppliers').select('*'),
+    sb.from('judy_products').select('id,name,sku,price,direction,borrow_supplier_id')
+  ]);
+  const all=recs||[];
+  const borrowed=all.filter(x=>x.status==='borrowed');
+  const consignIn=borrowed.filter(x=>x.direction==='in');
+  const consignOut=borrowed.filter(x=>x.direction==='out');
+  const overdueList=borrowed.filter(x=>x.expected_return&&isOverdue(x.expected_return));
+  const returned=all.filter(x=>x.status==='returned');
+  const soldPending=all.filter(x=>x.status==='sold_pending');
+
+  // Chart data - by supplier
+  const supMap={};borrowed.forEach(x=>{supMap[x.supplier_name||'未知']=(supMap[x.supplier_name||'未知']||0)+1;});
+
+  pc.innerHTML=`
+  <div class="ptitle">📋 借還總覽</div>
+  ${overdueList.length>0?`<div class="overdue-banner"><span style="font-size:20px">⚠️</span><div><div style="font-weight:900;color:#c0392b;font-size:14px">有 ${overdueList.length} 筆借貨已逾期未歸還！</div><div style="font-size:12px;color:#991b1b;margin-top:2px">${overdueList.map(x=>`${x.product_name}（${x.supplier_name}，逾期${daysDiff(x.expected_return)}天）`).join('、')}</div></div></div>`:''}
+  <div class="stats">
+    <div class="stat"><div class="stat-l">廠商寄賣中</div><div class="stat-v" style="color:var(--accent)">${consignIn.length} 件</div></div>
+    <div class="stat"><div class="stat-l">外借商品中</div><div class="stat-v" style="color:var(--accent)">${consignOut.length} 件</div></div>
+    <div class="stat"><div class="stat-l">逾期未還</div><div class="stat-v" style="color:${overdueList.length>0?'#c0392b':'#16a34a'}">${overdueList.length} 筆</div></div>
+    <div class="stat"><div class="stat-l">待結算</div><div class="stat-v" style="color:#7c3aed">${soldPending.length} 筆</div></div>
+    <div class="stat"><div class="stat-l">歷史歸還</div><div class="stat-v">${returned.length} 筆</div></div>
+    <div class="stat"><div class="stat-l">合作廠商</div><div class="stat-v">${(sups||[]).length} 家</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+    <div class="card"><div class="card-title">📊 各廠商借貨數量</div><div style="height:200px"><canvas id="ch-sup"></canvas></div></div>
+    <div class="card"><div class="card-title">📋 最新動態</div>
+      ${all.slice(0,6).map(x=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border2)">
+        <div><div style="font-size:13px;font-weight:800;color:var(--text)">${x.product_name||'—'}</div><div style="font-size:11px;color:var(--text3)">${x.supplier_name||'—'} · ${x.direction==='in'?'廠商寄賣':'外借商品'}</div></div>
+        <span class="badge ${x.status==='borrowed'?(isOverdue(x.expected_return)?'b-over':'b-in'):x.status==='returned'?'b-ret':x.status==='sold_pending'?'b-sold':'b-out'}">${x.status==='borrowed'?(isOverdue(x.expected_return)?'逾期':'借出中'):x.status==='returned'?'已歸還':'待結算'}</span>
+      </div>`).join('')||'<div style="text-align:center;padding:20px;color:var(--text3);font-weight:700">暫無記錄</div>'}
+    </div>
+  </div>`;
+
+  if(Object.keys(supMap).length>0){
+    const ch=new Chart(document.getElementById('ch-sup').getContext('2d'),{
+      type:'bar',
+      data:{labels:Object.keys(supMap),datasets:[{label:'件數',data:Object.values(supMap),backgroundColor:'rgba(201,133,106,0.65)',borderRadius:6}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{ticks:{font:{size:11},stepSize:1},grid:{color:'rgba(0,0,0,0.05)'}},x:{ticks:{font:{size:11}},grid:{display:false}}}}
+    });
+    activeCharts.push(ch);
+  }
+}
+
+// ===== CONSIGN IN (廠商寄賣) =====
+async function renderConsignIn(pc){
+  await renderBorrowList(pc,'in','📥 廠商寄賣','廠商借貨給我的商品');
+}
+
+// ===== CONSIGN OUT (外借商品) =====
+async function renderConsignOut(pc){
+  await renderBorrowList(pc,'out','📤 外借商品','我借給廠商的商品');
+}
+
+// ===== SHARED BORROW LIST =====
+async function renderBorrowList(pc,direction,title,subtitle){
+  const[{data:recs},{data:sups},{data:prods}]=await Promise.all([
+    sb.from('judy_borrow_records').select('*').eq('direction',direction).order('borrow_date',{ascending:false}),
+    sb.from('judy_suppliers').select('*').order('name'),
+    sb.from('judy_products').select('id,name,sku,price,status').order('name')
+  ]);
+  const isBoss=currentUser.role==='boss';
+  const active=(recs||[]).filter(x=>x.status==='borrowed');
+  const totalVal=active.reduce((a,x)=>{const p=(prods||[]).find(pr=>pr.id===x.product_id);return a+(Number(p?.price||0));},0);
+
+  pc.innerHTML=`
+  <div class="ptitle">${title}</div>
+  <div style="font-size:13px;color:var(--text3);font-weight:700;margin-bottom:14px;margin-top:-12px">${subtitle}</div>
+  <div class="stats" style="grid-template-columns:repeat(3,1fr)">
+    <div class="stat"><div class="stat-l">借出中</div><div class="stat-v" style="color:var(--accent)">${active.length} 件</div></div>
+    <div class="stat"><div class="stat-l">逾期未還</div><div class="stat-v" style="color:${active.filter(x=>isOverdue(x.expected_return)).length>0?'#c0392b':'#16a34a'}">${active.filter(x=>isOverdue(x.expected_return)).length} 筆</div></div>
+    <div class="stat"><div class="stat-l">商品總值</div><div class="stat-v">${fmt(totalVal)}</div></div>
+  </div>
+  <div class="flex aic jsb mb3">
+    <div class="sb" style="margin:0;flex:1">
+      <input class="fc" id="bl-s" placeholder="🔍 搜尋商品、廠商...">
+      <select class="fc" id="bl-st" style="max-width:130px">
+        <option value="">全部狀態</option>
+        <option value="borrowed">借出中</option>
+        <option value="returned">已歸還</option>
+        <option value="sold_pending">待結算</option>
+      </select>
+    </div>
+    <button class="btn btn-p btn-sm" style="margin-left:10px;white-space:nowrap" onclick="openBorrowModal(null,'${direction}')">＋ 新增記錄</button>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
+    <thead><tr><th>商品</th><th>貨號</th><th>廠商</th><th>借出日期</th><th>預計歸還</th><th>實際歸還</th><th>狀態</th><th>備註</th><th>操作</th></tr></thead>
+    <tbody id="bl-body"></tbody>
+  </table></div></div>`;
+
+  const render=()=>{
+    const sv=document.getElementById('bl-s').value.toLowerCase();
+    const st=document.getElementById('bl-st').value;
+    const f=(recs||[]).filter(x=>(!sv||(x.product_name?.toLowerCase().includes(sv)||x.supplier_name?.toLowerCase().includes(sv)))&&(!st||x.status===st));
+    document.getElementById('bl-body').innerHTML=f.length===0
+      ?`<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無記錄</td></tr>`
+      :f.map(x=>{
+        const over=x.status==='borrowed'&&isOverdue(x.expected_return);
+        const stBadge=x.status==='borrowed'?(over?'<span class="badge b-over">逾期</span>':'<span class="badge b-in">借出中</span>'):x.status==='returned'?'<span class="badge b-ret">已歸還</span>':'<span class="badge b-sold">待結算</span>';
+        return`<tr style="${over?'background:rgba(239,68,68,0.04)':''}">
+          <td style="font-weight:800">${x.product_name||'—'}</td>
+          <td><code style="font-size:11px;background:var(--accent-light);padding:2px 5px;border-radius:4px">${x.product_sku||'—'}</code></td>
+          <td style="font-weight:700">${x.supplier_name||'—'}</td>
+          <td style="font-size:12px">${fmtD(x.borrow_date)}</td>
+          <td style="font-size:12px;color:${over?'#c0392b':'inherit'};font-weight:${over?'800':'600'}">${fmtD(x.expected_return)}${over?` <span style="font-size:10px">(逾${daysDiff(x.expected_return)}天)</span>`:''}</td>
+          <td style="font-size:12px">${x.actual_return?fmtD(x.actual_return):'—'}</td>
+          <td>${stBadge}</td>
+          <td style="font-size:12px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${x.note||'—'}</td>
+          <td><div class="flex gap2">
+            <button class="btn btn-s btn-xs" onclick="openBorrowModal('${x.id}','${direction}')">✏️</button>
+            ${x.status==='borrowed'?`<button class="btn btn-g btn-xs" onclick="markReturn('${x.id}','${x.product_id||''}')">📦 歸還</button>`:''}
+            ${x.status==='borrowed'&&direction==='in'?`<button class="btn btn-w btn-xs" onclick="markSold('${x.id}','${x.product_name||''}','${x.supplier_name||''}','${x.supplier_id||''}','${x.product_id||''}')">💰 售出</button>`:''}
+            ${isBoss?`<button class="btn btn-d btn-xs" onclick="deleteBorrow('${x.id}','${x.product_id||''}','${direction}')">🗑️</button>`:''}
+          </div></td>
+        </tr>`;
+      }).join('');
+  };
+  render();
+  document.getElementById('bl-s').oninput=render;
+  document.getElementById('bl-st').onchange=render;
+
+  window.markReturn=async(id,pid)=>{
+    const d=prompt('請輸入歸還日期 (YYYY-MM-DD):',new Date().toISOString().split('T')[0]);
+    if(!d)return;
+    await sb.from('judy_borrow_records').update({actual_return:d,status:'returned'}).eq('id',id);
+    if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own'}).eq('id',pid);
+    flash('ok','✅ 已標記歸還，庫存已更新');
+    loadOverdueBadge();
+    renderBorrowList(document.getElementById('pc'),direction,title,subtitle);
+  };
+
+  window.markSold=async(id,productName,supplierName,supplierId,productId)=>{
+    openModal('💰 標記廠商商品售出',`
+    <div style="padding:10px 14px;background:var(--accent-light);border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:700">
+      商品：<b>${productName}</b><br>廠商：<b>${supplierName}</b>
+    </div>
+    <div id="ms-a"></div>
+    <div class="fg"><label class="fl">售出金額 (NT$)</label><input class="fc" id="ms-amt" type="number" min="0" placeholder="0"></div>
+    <div class="fg"><label class="fl">收款方式</label>${payMethodSelect('ms-pay')}</div>
+    <div class="fg"><label class="fl">備註</label><textarea class="fc" id="ms-note" rows="2" placeholder="備註..."></textarea></div>
+    <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;font-weight:700;color:#856404">
+      ⚠️ 標記售出後將通知老闆填寫結算金額
+    </div>
+    <div class="flex gap2" style="justify-content:flex-end">
+      <button class="btn btn-s" onclick="closeModal()">取消</button>
+      <button class="btn btn-p" id="ms-save">💰 確認售出</button>
+    </div>`);
+    document.getElementById('ms-save').onclick=async()=>{
+      const amt=parseFloat(document.getElementById('ms-amt').value)||0;
+      const pay=document.getElementById('ms-pay').value;
+      const note=document.getElementById('ms-note').value;
+      await sb.from('judy_borrow_records').update({status:'sold_pending',note:(note?note+' | ':'')+'已售出，待結算'}).eq('id',id);
+      if(productId)await sb.from('judy_products').update({stock:0,status:'inactive'}).eq('id',productId);
+      // Add notification for boss
+      await sb.from('judy_notifications').insert({type:'sold_pending',title:`💰 廠商商品已售出，待填結算`,message:`${productName}（${supplierName}）已售出 ${fmt(amt)}，請填寫結算金額`,created_by:currentUser.display_name});
+      // Pre-create settlement record
+      await sb.from('judy_settlements').insert({type:'supplier_sold',supplier_id:supplierId||null,supplier_name:supplierName,product_name:productName,sale_amount:amt,settlement_amount:0,payment_method:pay,note,created_by:currentUser.display_name,settled_by:''});
+      flash('ok','✅ 已標記售出，已通知老闆填寫結算金額');
+      closeModal();
+      renderBorrowList(document.getElementById('pc'),direction,title,subtitle);
+    };
+  };
+
+  window.deleteBorrow=async(id,pid,dir)=>{
+    if(!confirm('確定刪除此記錄？'))return;
+    await sb.from('judy_borrow_records').delete().eq('id',id);
+    flash('ok','已刪除');
+    renderBorrowList(document.getElementById('pc'),dir,title,subtitle);
+  };
+}
+
+// ===== BORROW MODAL =====
+window.openBorrowModal=async(id,direction)=>{
+  const rec=id?(await sb.from('judy_borrow_records').select('*').eq('id',id).maybeSingle()).data:null;
+  const[{data:sups},{data:prods}]=await Promise.all([
+    sb.from('judy_suppliers').select('*').order('name'),
+    sb.from('judy_products').select('id,name,sku,price,direction').order('name')
+  ]);
+  const dir=rec?.direction||direction;
+  const dirLabel=dir==='in'?'廠商寄賣（廠商→我）':'外借商品（我→廠商）';
+  openModal(rec?'編輯借還記錄':'新增借還記錄',`
+  <div id="bm-a"></div>
+  <div style="padding:8px 12px;background:var(--accent-light);border-radius:8px;margin-bottom:12px;font-size:13px;font-weight:700;color:var(--accent)">類型：${dirLabel}</div>
+  <div class="fg" style="position:relative">
+    <label class="fl">🔍 商品（輸入搜尋）</label>
+    <input class="fc" id="bm-prod" value="${rec?.product_name||''}" placeholder="輸入貨號或商品名稱..." autocomplete="off">
+    <input type="hidden" id="bm-pid" value="${rec?.product_id||''}">
+    <input type="hidden" id="bm-psku" value="${rec?.product_sku||''}">
+    <div id="bm-prod-drop" class="drop"></div>
+  </div>
+  <div class="fg"><label class="fl">廠商 *</label>
+    <select class="fc" id="bm-sup"><option value="">請選擇廠商</option>${(sups||[]).map(s=>`<option value="${s.id}" data-name="${s.name}"${rec?.supplier_id===s.id?' selected':''}>${s.name}</option>`).join('')}</select>
+  </div>
+  <div class="fgrid">
+    <div class="fg"><label class="fl">借出日期</label><input class="fc" id="bm-bdate" type="date" value="${rec?.borrow_date||new Date().toISOString().split('T')[0]}"></div>
+    <div class="fg"><label class="fl">預計歸還日期</label><input class="fc" id="bm-edate" type="date" value="${rec?.expected_return||''}"></div>
+    ${rec?.actual_return?`<div class="fg"><label class="fl">實際歸還日期</label><input class="fc" id="bm-adate" type="date" value="${rec.actual_return}"></div>`:''}
+  </div>
+  <div class="fg"><label class="fl">備註</label><textarea class="fc" id="bm-note" rows="2">${rec?.note||''}</textarea></div>
+  <div class="flex gap2" style="justify-content:flex-end">
+    <button class="btn btn-s" onclick="closeModal()">取消</button>
+    <button class="btn btn-p" id="bm-save">💾 儲存</button>
+  </div>`);
+
+  // Product search
+  const pInp=document.getElementById('bm-prod');const pDrop=document.getElementById('bm-prod-drop');
+  pInp.oninput=()=>{
+    const v=pInp.value.toLowerCase();if(!v){pDrop.style.display='none';return;}
+    const res=(prods||[]).filter(p=>p.name?.toLowerCase().includes(v)||p.sku?.toLowerCase().includes(v)).slice(0,8);
+    if(!res.length){pDrop.style.display='none';return;}
+    pDrop.innerHTML=res.map(p=>`<div class="drop-item" data-id="${p.id}" data-name="${p.name}" data-sku="${p.sku||''}">${p.sku?`<span style="color:var(--accent)">${p.sku}</span> — `:''} ${p.name}</div>`).join('');
+    pDrop.style.display='block';
+    pDrop.querySelectorAll('.drop-item').forEach(el=>el.onclick=()=>{
+      document.getElementById('bm-pid').value=el.dataset.id;
+      document.getElementById('bm-psku').value=el.dataset.sku;
+      pInp.value=`${el.dataset.sku?el.dataset.sku+' — ':''}${el.dataset.name}`;
+      pDrop.style.display='none';
+    });
+  };
+
+  document.getElementById('bm-save').onclick=async()=>{
+    const supEl=document.getElementById('bm-sup');
+    const supId=supEl.value;
+    const supName=supEl.options[supEl.selectedIndex]?.dataset.name||'';
+    if(!supId){showAlert('bm-a','err','請選擇廠商');return;}
+    const pid=document.getElementById('bm-pid').value;
+    const pname=pid?pInp.value.split('—').pop()?.trim():pInp.value.trim();
+    const psku=document.getElementById('bm-psku').value;
+    const payload={
+      product_id:pid||null,product_name:pname,product_sku:psku,
+      supplier_id:supId,supplier_name:supName,direction:dir,
+      borrow_date:document.getElementById('bm-bdate').value||null,
+      expected_return:document.getElementById('bm-edate').value||null,
+      actual_return:document.getElementById('bm-adate')?.value||null,
+      note:document.getElementById('bm-note').value,
+      status:rec?.status||'borrowed'
+    };
+    if(rec){
+      await sb.from('judy_borrow_records').update(payload).eq('id',rec.id);
+    } else {
+      await sb.from('judy_borrow_records').insert(payload);
+      // Update product direction
+      if(pid){
+        await sb.from('judy_products').update({direction:dir,borrow_supplier_id:supId,is_borrowed:true}).eq('id',pid);
+      }
+    }
+    flash('ok',rec?'記錄已更新':'記錄已新增');
+    closeModal();loadOverdueBadge();
+    navigate(curPage);
+  };
+};
+
+// ===== RETURNED =====
+async function renderReturned(pc){
+  const{data:recs}=await sb.from('judy_borrow_records').select('*').eq('status','returned').order('actual_return',{ascending:false});
+  pc.innerHTML=`
+  <div class="ptitle">✅ 已歸還記錄</div>
+  <div class="sb"><input class="fc" id="ret-s" placeholder="🔍 搜尋商品、廠商..."></div>
+  <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
+    <thead><tr><th>類型</th><th>商品</th><th>貨號</th><th>廠商</th><th>借出日期</th><th>預計歸還</th><th>實際歸還</th><th>備註</th></tr></thead>
+    <tbody id="ret-body"></tbody>
+  </table></div></div>`;
+  const render=()=>{
+    const sv=document.getElementById('ret-s').value.toLowerCase();
+    const f=(recs||[]).filter(x=>!sv||(x.product_name?.toLowerCase().includes(sv)||x.supplier_name?.toLowerCase().includes(sv)));
+    document.getElementById('ret-body').innerHTML=f.length===0
+      ?`<tr><td colspan="8" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無已歸還記錄</td></tr>`
+      :f.map(x=>`<tr>
+        <td><span class="badge ${x.direction==='in'?'b-in':'b-out'}" style="font-size:10px">${x.direction==='in'?'廠商寄賣':'外借商品'}</span></td>
+        <td style="font-weight:800">${x.product_name||'—'}</td>
+        <td><code style="font-size:11px;background:var(--accent-light);padding:2px 5px;border-radius:4px">${x.product_sku||'—'}</code></td>
+        <td style="font-weight:700">${x.supplier_name||'—'}</td>
+        <td style="font-size:12px">${fmtD(x.borrow_date)}</td>
+        <td style="font-size:12px">${fmtD(x.expected_return)}</td>
+        <td style="font-size:12px;color:#16a34a;font-weight:700">${fmtD(x.actual_return)}</td>
+        <td style="font-size:12px">${x.note||'—'}</td>
+      </tr>`).join('');
+  };
+  render();document.getElementById('ret-s').oninput=render;
+}
+
+// ===== OVERDUE =====
+async function renderOverdue(pc){
+  const{data:recs}=await sb.from('judy_borrow_records').select('*').eq('status','borrowed').order('expected_return');
+  const overdue=(recs||[]).filter(x=>x.expected_return&&isOverdue(x.expected_return));
+  const soon=(recs||[]).filter(x=>x.expected_return&&!isOverdue(x.expected_return)&&daysDiff(x.expected_return)*-1<=7);
+  pc.innerHTML=`
+  <div class="ptitle">⚠️ 逾期警示</div>
+  ${overdue.length>0?`
+  <div style="font-size:14px;font-weight:900;color:#c0392b;margin-bottom:10px">🔴 已逾期（${overdue.length} 筆）</div>
+  <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div class="tw"><table>
+    <thead><tr><th>商品</th><th>廠商</th><th>類型</th><th>預計歸還</th><th>逾期天數</th><th>操作</th></tr></thead>
+    <tbody>${overdue.map(x=>`<tr style="background:rgba(239,68,68,0.05)">
+      <td style="font-weight:800">${x.product_name||'—'}</td>
+      <td style="font-weight:700">${x.supplier_name||'—'}</td>
+      <td><span class="badge ${x.direction==='in'?'b-in':'b-out'}" style="font-size:10px">${x.direction==='in'?'廠商寄賣':'外借商品'}</span></td>
+      <td style="font-size:12px;color:#c0392b;font-weight:800">${fmtD(x.expected_return)}</td>
+      <td><span class="badge b-over">逾期 ${daysDiff(x.expected_return)} 天</span></td>
+      <td><button class="btn btn-g btn-xs" onclick="markReturn('${x.id}','${x.product_id||''}')">📦 標記歸還</button></td>
+    </tr>`).join('')}</tbody>
+  </table></div></div>`:'<div class="card" style="text-align:center;padding:28px"><div style="font-size:32px">🎉</div><div style="font-weight:700;color:#16a34a;margin-top:8px">目前沒有逾期記錄！</div></div>'}
+  ${soon.length>0?`
+  <div style="font-size:14px;font-weight:900;color:#856404;margin-bottom:10px">🟡 即將到期（7天內，${soon.length} 筆）</div>
+  <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
+    <thead><tr><th>商品</th><th>廠商</th><th>類型</th><th>預計歸還</th><th>剩餘天數</th></tr></thead>
+    <tbody>${soon.map(x=>`<tr>
+      <td style="font-weight:800">${x.product_name||'—'}</td>
+      <td style="font-weight:700">${x.supplier_name||'—'}</td>
+      <td><span class="badge ${x.direction==='in'?'b-in':'b-out'}" style="font-size:10px">${x.direction==='in'?'廠商寄賣':'外借商品'}</span></td>
+      <td style="font-size:12px;color:#856404;font-weight:700">${fmtD(x.expected_return)}</td>
+      <td><span class="badge" style="background:#fef3c7;color:#856404;border:1px solid #fcd34d">剩 ${Math.abs(daysDiff(x.expected_return))} 天</span></td>
+    </tr>`).join('')}</tbody>
+  </table></div></div>`:''}`;
+
+  window.markReturn=async(id,pid)=>{
+    const d=prompt('請輸入歸還日期 (YYYY-MM-DD):',new Date().toISOString().split('T')[0]);
+    if(!d)return;
+    await sb.from('judy_borrow_records').update({actual_return:d,status:'returned'}).eq('id',id);
+    if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own'}).eq('id',pid);
+    flash('ok','✅ 已標記歸還');loadOverdueBadge();renderOverdue(pc);
+  };
+}
+
+// ===== SUPPLIERS =====
+async function renderSuppliers(pc){
+  const{data:sups}=await sb.from('judy_suppliers').select('*').order('name');
+  const{data:recs}=await sb.from('judy_borrow_records').select('supplier_id,status');
+  const isBoss=currentUser.role==='boss';
+
+  pc.innerHTML=`
+  <div class="flex aic jsb mb3"><div class="ptitle" style="margin:0">🏪 廠商管理</div><button class="btn btn-p" onclick="openSupModal(null)">＋ 新增廠商</button></div>
+  <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
+    <thead><tr><th>廠商名稱</th><th>聯絡電話</th><th>地址</th><th>借出中</th><th>歷史記錄</th><th>備註</th><th>操作</th></tr></thead>
+    <tbody>${(sups||[]).length===0
+      ?'<tr><td colspan="7" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">尚無廠商，請新增</td></tr>'
+      :(sups||[]).map(s=>{
+        const sRecs=(recs||[]).filter(x=>x.supplier_id===s.id);
+        const activeCnt=sRecs.filter(x=>x.status==='borrowed').length;
+        const totalCnt=sRecs.length;
+        return`<tr>
+          <td style="font-weight:800">${s.name}</td>
+          <td>${s.phone||'—'}</td>
+          <td style="font-size:12px">${s.address||'—'}</td>
+          <td><span class="badge ${activeCnt>0?'b-in':'b-ret'}">${activeCnt} 件</span></td>
+          <td style="color:var(--text3);font-size:12px">${totalCnt} 筆</td>
+          <td style="font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.note||'—'}</td>
+          <td><div class="flex gap2">
+            <button class="btn btn-s btn-xs" onclick="openSupModal('${s.id}')">✏️</button>
+            <button class="btn btn-s btn-xs" onclick="viewSupHistory('${s.id}','${s.name}')">📋</button>
+            ${isBoss?`<button class="btn btn-d btn-xs" onclick="deleteSup('${s.id}')">🗑️</button>`:''}
+          </div></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table></div></div>`;
+
+  window.openSupModal=async(id)=>{
+    const s=id?(sups||[]).find(x=>x.id===id):null;
+    openModal(s?'編輯廠商':'新增廠商',`
+    <div id="sm-a"></div>
+    <div class="fg"><label class="fl">廠商名稱 *</label><input class="fc" id="sm-name" value="${s?.name||''}"></div>
+    <div class="fgrid">
+      <div class="fg"><label class="fl">聯絡電話</label><input class="fc" id="sm-phone" value="${s?.phone||''}"></div>
+      <div class="fg"><label class="fl">聯絡人</label><input class="fc" id="sm-contact" value="${s?.contact||''}"></div>
+    </div>
+    <div class="fg"><label class="fl">地址</label><input class="fc" id="sm-addr" value="${s?.address||''}"></div>
+    <div class="fg"><label class="fl">備註</label><textarea class="fc" id="sm-note" rows="2">${s?.note||''}</textarea></div>
+    <div class="flex gap2" style="justify-content:flex-end">
+      <button class="btn btn-s" onclick="closeModal()">取消</button>
+      <button class="btn btn-p" id="sm-save">💾 儲存</button>
+    </div>`);
+    document.getElementById('sm-save').onclick=async()=>{
+      const name=document.getElementById('sm-name').value.trim();
+      if(!name){showAlert('sm-a','err','請填寫廠商名稱');return;}
+      const payload={name,phone:document.getElementById('sm-phone').value||null,contact:document.getElementById('sm-contact').value||null,address:document.getElementById('sm-addr').value||null,note:document.getElementById('sm-note').value||null};
+      if(s)await sb.from('judy_suppliers').update(payload).eq('id',s.id);
+      else await sb.from('judy_suppliers').insert(payload);
+      flash('ok',s?'廠商已更新':'廠商已新增');closeModal();renderSuppliers(pc);
+    };
+  };
+
+  window.viewSupHistory=async(supId,supName)=>{
+    const{data:supRecs}=await sb.from('judy_borrow_records').select('*').eq('supplier_id',supId).order('borrow_date',{ascending:false});
+    openModal(`${supName} — 往來記錄`,`
+    <div class="tw"><table>
+      <thead><tr><th>類型</th><th>商品</th><th>借出日期</th><th>歸還日期</th><th>狀態</th></tr></thead>
+      <tbody>${(supRecs||[]).length===0
+        ?'<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--text3);font-weight:700">暫無記錄</td></tr>'
+        :(supRecs||[]).map(x=>`<tr>
+          <td><span class="badge ${x.direction==='in'?'b-in':'b-out'}" style="font-size:10px">${x.direction==='in'?'廠商寄賣':'外借商品'}</span></td>
+          <td style="font-weight:800">${x.product_name||'—'}</td>
+          <td style="font-size:12px">${fmtD(x.borrow_date)}</td>
+          <td style="font-size:12px">${x.actual_return?fmtD(x.actual_return):'—'}</td>
+          <td><span class="badge ${x.status==='borrowed'?'b-in':x.status==='returned'?'b-ret':'b-sold'}">${x.status==='borrowed'?'借出中':x.status==='returned'?'已歸還':'待結算'}</span></td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div>`,true);
+  };
+
+  window.deleteSup=async id=>{
+    if(!confirm('確定刪除此廠商？相關借還記錄不會被刪除。'))return;
+    await sb.from('judy_suppliers').delete().eq('id',id);
+    flash('ok','廠商已刪除');renderSuppliers(pc);
+  };
+}
+
+// ===== SETTLEMENT (老闆限定) =====
+async function renderSettlement(pc){
+  if(currentUser.role!=='boss'){pc.innerHTML='<div class="card" style="text-align:center;padding:40px"><div style="font-size:40px">🔒</div><div style="font-weight:900;margin-top:12px">此功能僅限老闆查看</div></div>';return;}
+  const[{data:settles},{data:pending}]=await Promise.all([
+    sb.from('judy_settlements').select('*').order('settled_at',{ascending:false}),
+    sb.from('judy_borrow_records').select('*').eq('status','sold_pending').order('created_at',{ascending:false})
+  ]);
+  const totalIn=(settles||[]).filter(x=>x.type==='supplier_sold').reduce((a,x)=>a+Number(x.settlement_amount),0);
+  const totalOut=(settles||[]).filter(x=>x.type==='we_sold').reduce((a,x)=>a+Number(x.settlement_amount),0);
+  const unsettled=(settles||[]).filter(x=>!x.settlement_amount||x.settlement_amount===0);
+
+  pc.innerHTML=`
+  <div class="ptitle">💰 結算管理</div>
+  ${unsettled.length>0?`<div class="overdue-banner" style="background:linear-gradient(135deg,#fef3c7,#fde68a);border-color:#fcd34d"><span style="font-size:20px">💰</span><div><div style="font-weight:900;color:#856404;font-size:14px">有 ${unsettled.length} 筆待填寫結算金額</div></div></div>`:''}
+  <div class="stats" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stat"><div class="stat-l">廠商寄賣結算</div><div class="stat-v" style="color:var(--accent)">${fmt(totalIn)}</div></div>
+    <div class="stat"><div class="stat-l">外借商品結算</div><div class="stat-v">${fmt(totalOut)}</div></div>
+    <div class="stat"><div class="stat-l">待填結算</div><div class="stat-v" style="color:#856404">${unsettled.length} 筆</div></div>
+    <div class="stat"><div class="stat-l">總結算筆數</div><div class="stat-v">${(settles||[]).length} 筆</div></div>
+  </div>
+  ${pending?.length>0?`
+  <div class="card-title" style="margin-bottom:10px">⏳ 待結算（員工已標記售出）</div>
+  <div class="card" style="padding:0;overflow:hidden;margin-bottom:16px"><div class="tw"><table>
+    <thead><tr><th>商品</th><th>廠商</th><th>備註</th><th>操作</th></tr></thead>
+    <tbody>${(pending||[]).map(x=>`<tr style="background:rgba(252,211,77,0.08)">
+      <td style="font-weight:800">${x.product_name||'—'}</td>
+      <td style="font-weight:700">${x.supplier_name||'—'}</td>
+      <td style="font-size:12px">${x.note||'—'}</td>
+      <td><button class="btn btn-w btn-sm" onclick="openSettleModal('${x.id}','${x.product_name||''}','${x.supplier_name||''}','${x.supplier_id||''}','${x.product_id||''}')">💰 填寫結算</button></td>
+    </tr>`).join('')}</tbody>
+  </table></div></div>`:''}
+  <div class="flex aic jsb mb3">
+    <div style="font-size:15px;font-weight:900;color:var(--text)">📋 結算記錄</div>
+    <button class="btn btn-p btn-sm" onclick="openNewSettleModal()">＋ 新增結算</button>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
+    <thead><tr><th>類型</th><th>廠商</th><th>商品</th><th>售出金額</th><th>結算金額</th><th>收款方式</th><th>日期</th><th>操作</th></tr></thead>
+    <tbody id="settle-body"></tbody>
+  </table></div></div>`;
+
+  const renderSettle=()=>{
+    document.getElementById('settle-body').innerHTML=(settles||[]).length===0
+      ?'<tr><td colspan="8" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無結算記錄</td></tr>'
+      :(settles||[]).map(x=>`<tr>
+        <td><span class="badge ${x.type==='supplier_sold'?'b-in':'b-out'}" style="font-size:10px">${x.type==='supplier_sold'?'廠商寄賣':'外借商品'}</span></td>
+        <td style="font-weight:800">${x.supplier_name||'—'}</td>
+        <td>${x.product_name||'—'}</td>
+        <td>${fmt(x.sale_amount)}</td>
+        <td style="font-weight:900;color:var(--accent)">${x.settlement_amount?fmt(x.settlement_amount):'<span style="color:#856404;font-size:12px">待填寫</span>'}</td>
+        <td style="font-size:12px">${x.payment_method||'—'}</td>
+        <td style="font-size:12px">${fmtD(x.settled_at)}</td>
+        <td><div class="flex gap2">
+          <button class="btn btn-s btn-xs" onclick="editSettle('${x.id}')">✏️</button>
+          <button class="btn btn-d btn-xs" onclick="deleteSettle('${x.id}')">🗑️</button>
+        </div></td>
+      </tr>`).join('');
+  };
+  renderSettle();
+
+  window.openSettleModal=async(borrowId,productName,supplierName,supplierId,productId)=>{
+    // Find existing settlement
+    const{data:ex}=await sb.from('judy_settlements').select('*').eq('supplier_name',supplierName).eq('product_name',productName).eq('settlement_amount',0).maybeSingle();
+    openModal('💰 填寫結算金額',`
+    <div style="padding:10px 14px;background:var(--accent-light);border-radius:8px;margin-bottom:14px;font-size:13px;font-weight:700">
+      商品：<b>${productName}</b><br>廠商：<b>${supplierName}</b>
+    </div>
+    <div id="st-a"></div>
+    <div class="fg"><label class="fl">售出金額 (NT$)</label><input class="fc" id="st-sale" type="number" min="0" value="${ex?.sale_amount||0}"></div>
+    <div class="fg"><label class="fl">結算金額 (NT$) <span style="font-size:11px;color:var(--text3)">（應付給廠商或廠商應付給我）</span></label><input class="fc" id="st-amt" type="number" min="0" value="${ex?.settlement_amount||0}"></div>
+    <div class="fg"><label class="fl">收款方式</label>${payMethodSelect('st-pay',ex?.payment_method||'')}</div>
+    <div class="fg"><label class="fl">備註</label><textarea class="fc" id="st-note" rows="2">${ex?.note||''}</textarea></div>
+    <div class="flex gap2" style="justify-content:flex-end">
+      <button class="btn btn-s" onclick="closeModal()">取消</button>
+      <button class="btn btn-p" id="st-save">💾 確認結算</button>
+    </div>`);
+    document.getElementById('st-save').onclick=async()=>{
+      const saleAmt=parseFloat(document.getElementById('st-sale').value)||0;
+      const settleAmt=parseFloat(document.getElementById('st-amt').value)||0;
+      const pay=document.getElementById('st-pay').value;
+      const note=document.getElementById('st-note').value;
+      if(ex){
+        await sb.from('judy_settlements').update({sale_amount:saleAmt,settlement_amount:settleAmt,payment_method:pay,note,settled_by:currentUser.display_name,settled_at:new Date().toISOString()}).eq('id',ex.id);
+      } else {
+        await sb.from('judy_settlements').insert({type:'supplier_sold',supplier_id:supplierId||null,supplier_name:supplierName,product_name:productName,product_id:productId||null,sale_amount:saleAmt,settlement_amount:settleAmt,payment_method:pay,note,settled_by:currentUser.display_name,created_by:currentUser.display_name});
+      }
+      if(borrowId)await sb.from('judy_borrow_records').update({status:'returned',actual_return:new Date().toISOString().split('T')[0]}).eq('id',borrowId);
+      // Mark notification as read
+      await sb.from('judy_notifications').update({is_read:true}).eq('type','sold_pending').eq('is_read',false);
+      flash('ok','✅ 結算已完成');closeModal();renderSettlement(document.getElementById('pc'));
+    };
+  };
+
+  window.openNewSettleModal=async()=>{
+    const{data:sups}=await sb.from('judy_suppliers').select('*').order('name');
+    openModal('＋ 新增結算記錄',`
+    <div id="ns-a"></div>
+    <div class="fg"><label class="fl">類型</label>
+      <select class="fc" id="ns-type"><option value="supplier_sold">廠商寄賣（廠商商品我賣出）</option><option value="we_sold">外借商品（我的商品廠商賣出）</option></select>
+    </div>
+    <div class="fg"><label class="fl">廠商</label>
+      <select class="fc" id="ns-sup"><option value="">請選擇</option>${(sups||[]).map(s=>`<option value="${s.id}" data-name="${s.name}">${s.name}</option>`).join('')}</select>
+    </div>
+    <div class="fg"><label class="fl">商品名稱</label><input class="fc" id="ns-prod" placeholder="商品名稱"></div>
+    <div class="fgrid">
+      <div class="fg"><label class="fl">售出金額 (NT$)</label><input class="fc" id="ns-sale" type="number" min="0" value="0"></div>
+      <div class="fg"><label class="fl">結算金額 (NT$)</label><input class="fc" id="ns-amt" type="number" min="0" value="0"></div>
+    </div>
+    <div class="fg"><label class="fl">收款方式</label>${payMethodSelect('ns-pay')}</div>
+    <div class="fg"><label class="fl">備註</label><textarea class="fc" id="ns-note" rows="2"></textarea></div>
+    <div class="flex gap2" style="justify-content:flex-end">
+      <button class="btn btn-s" onclick="closeModal()">取消</button>
+      <button class="btn btn-p" id="ns-save">💾 新增</button>
+    </div>`);
+    document.getElementById('ns-save').onclick=async()=>{
+      const supEl=document.getElementById('ns-sup');
+      const supId=supEl.value;const supName=supEl.options[supEl.selectedIndex]?.dataset.name||'';
+      const prod=document.getElementById('ns-prod').value.trim();
+      if(!prod){showAlert('ns-a','err','請填寫商品名稱');return;}
+      await sb.from('judy_settlements').insert({type:document.getElementById('ns-type').value,supplier_id:supId||null,supplier_name:supName,product_name:prod,sale_amount:parseFloat(document.getElementById('ns-sale').value)||0,settlement_amount:parseFloat(document.getElementById('ns-amt').value)||0,payment_method:document.getElementById('ns-pay').value,note:document.getElementById('ns-note').value,settled_by:currentUser.display_name,created_by:currentUser.display_name});
+      flash('ok','結算記錄已新增');closeModal();renderSettlement(document.getElementById('pc'));
+    };
+  };
+
+  window.editSettle=async(id)=>{
+    const{data:s}=await sb.from('judy_settlements').select('*').eq('id',id).maybeSingle();
+    if(!s)return;
+    openModal('✏️ 編輯結算記錄',`
+    <div id="es-a"></div>
+    <div class="fg"><label class="fl">售出金額 (NT$)</label><input class="fc" id="es-sale" type="number" min="0" value="${s.sale_amount||0}"></div>
+    <div class="fg"><label class="fl">結算金額 (NT$)</label><input class="fc" id="es-amt" type="number" min="0" value="${s.settlement_amount||0}"></div>
+    <div class="fg"><label class="fl">收款方式</label>${payMethodSelect('es-pay',s.payment_method||'')}</div>
+    <div class="fg"><label class="fl">備註</label><textarea class="fc" id="es-note" rows="2">${s.note||''}</textarea></div>
+    <div class="flex gap2" style="justify-content:flex-end">
+      <button class="btn btn-s" onclick="closeModal()">取消</button>
+      <button class="btn btn-p" id="es-save">💾 儲存</button>
+    </div>`);
+    document.getElementById('es-save').onclick=async()=>{
+      await sb.from('judy_settlements').update({sale_amount:parseFloat(document.getElementById('es-sale').value)||0,settlement_amount:parseFloat(document.getElementById('es-amt').value)||0,payment_method:document.getElementById('es-pay').value,note:document.getElementById('es-note').value,settled_by:currentUser.display_name}).eq('id',id);
+      flash('ok','結算已更新');closeModal();renderSettlement(document.getElementById('pc'));
+    };
+  };
+
+  window.deleteSettle=async id=>{
+    if(!confirm('確定刪除此結算記錄？'))return;
+    await sb.from('judy_settlements').delete().eq('id',id);
+    flash('ok','已刪除');renderSettlement(document.getElementById('pc'));
+  };
+}
+
+// ===== START =====
+document.addEventListener('DOMContentLoaded',renderApp);
+</script>
+</body>
+</html>
