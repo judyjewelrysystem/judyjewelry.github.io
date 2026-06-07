@@ -525,7 +525,7 @@ async function renderDashboard(pc){
 let invProds=[],invSups=[],invCats=[],invMats=[];
 async function renderInventory(pc){
   const[{data:prods},{data:sups},{data:cats}]=await Promise.all([
-    sb.from('judy_products').select('*').order('created_at',{ascending:false}),
+    sb.from('judy_products').select('*,judy_suppliers!borrow_supplier_id(name)').order('created_at',{ascending:false}),
     sb.from('judy_suppliers').select('*').order('name'),
     sb.from('judy_categories').select('*').order('name')
   ]);
@@ -542,7 +542,7 @@ async function renderInventory(pc){
     <select class="fc" id="inv-st" style="max-width:120px"><option value="active">上架</option><option value="">全部</option><option value="inactive">下架</option></select>
   </div>
   <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
-    <thead><tr><th>貨號</th><th>照片</th><th>商品名稱</th><th>類別</th><th>材質</th>${isBoss?'<th>成本</th>':''}<th>售價</th><th>庫存</th><th>類型</th><th>狀態</th><th>操作</th></tr></thead>
+    <thead><tr><th>貨號</th><th>照片</th><th>商品名稱</th><th>類別</th><th>材質</th>${isBoss?'<th>成本</th>':''}<th>售價</th><th>庫存</th><th>類型</th><th>廠商</th><th>借出日期</th><th>預計歸還</th><th>狀態</th><th>操作</th></tr></thead>
     <tbody id="inv-body"></tbody>
   </table></div></div>`;
 
@@ -551,7 +551,7 @@ async function renderInventory(pc){
     const c=document.getElementById('inv-c').value;
     const st=document.getElementById('inv-st').value;
     const f=invProds.filter(p=>(!s||(p.name?.toLowerCase().includes(s)||p.sku?.toLowerCase().includes(s)))&&(!c||p.category===c)&&(!st||p.status===st));
-    document.getElementById('inv-body').innerHTML=f.length===0?`<tr><td colspan="${isBoss?11:10}" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無商品</td></tr>`:
+    document.getElementById('inv-body').innerHTML=f.length===0?`<tr><td colspan="${isBoss?14:13}" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無商品</td></tr>`:
     f.map(p=>`<tr>
       <td><code style="font-size:11px;background:var(--accent-light);padding:2px 6px;border-radius:4px">${p.sku||'—'}</code></td>
       <td>${p.image1?`<img src="${p.image1}" style="width:42px;height:42px;object-fit:cover;border-radius:8px">`:'<span style="color:var(--text3);font-size:11px">無</span>'}</td>
@@ -560,8 +560,13 @@ async function renderInventory(pc){
       ${isBoss?`<td>${p.cost?fmt(p.cost):'<span style="color:#ef4444;font-size:11px">未填</span>'}</td>`:''}
       <td style="font-weight:800;color:var(--accent)">${fmt(p.price)}</td>
       <td style="font-weight:800">${p.stock}</td>
-      <td><span class="badge" style="background:var(--accent-light);color:var(--text);font-size:10px">${p.direction==='in'?'廠商寄賣':p.direction==='out'?'外借商品':'自有'}</span></td>
-      <td><span class="badge ${p.status==='active'?'b-on':'b-off'}">${p.status==='active'?'上架':'下架'}</span></td>
+      <td><span class="badge ${p.direction==='in'?'':''}${p.direction==='in'?'b-in':p.direction==='out'?'b-out':''}" style="${p.direction==='own'?'background:var(--accent-light);color:var(--text)':''}font-size:10px">${p.direction==='in'?'廠商寄賣':p.direction==='out'?'外借商品':'自有'}</span></td>
+      <td style="font-size:12px;font-weight:700;color:var(--accent)">${p.direction!=='own'?(p['judy_suppliers']?.name||'—'):'—'}</td>
+      <td style="font-size:12px">${p.borrow_date?fmtD(p.borrow_date):'—'}</td>
+      <td style="font-size:12px">${(()=>{if(!p.borrow_return_date||p.direction==='own'||!p.is_borrowed)return'—';const over=new Date(p.borrow_return_date)<new Date();return over?'<span style="color:#c0392b;font-weight:800">⚠️ '+fmtD(p.borrow_return_date)+'</span>':fmtD(p.borrow_return_date);})()}</td>
+      <td>
+        <span class="badge ${p.status==='active'?'b-on':'b-off'}">${p.status==='active'?'上架':'下架'}</span>
+      </td>
       <td><div class="flex gap2">
         <button class="btn btn-s btn-xs" onclick="openProdModal('${p.id}')">✏️</button>
         ${isBoss?`<button class="btn btn-d btn-xs" onclick="deleteProd('${p.id}')">🗑️</button>`:''}
@@ -605,7 +610,7 @@ window.openProdModal=async(id)=>{
       </div>
       <div class="fgrid">
         <div class="fg"><label class="fl">📅 借貨日期</label><input class="fc" id="pm-bdate" type="date" value="${p?.borrow_date||new Date().toISOString().split('T')[0]}"></div>
-        <div class="fg"><label class="fl">📅 預計歸還日期</label><input class="fc" id="pm-rdate" type="date" value="${p?.borrow_return_date||''}"></div>
+        <div class="fg"><label class="fl">📅 預計歸還日期（選填）</label><input class="fc" id="pm-rdate" type="date" value="${p?.borrow_return_date||''}"></div>
       </div>
     </div>
   </div>
@@ -630,7 +635,7 @@ window.openProdModal=async(id)=>{
     const borrowDate=dir!=='own'?(document.getElementById('pm-bdate')?.value||''):'';
     const returnDate=dir!=='own'?(document.getElementById('pm-rdate')?.value||''):'';
     const cost=isBoss?parseFloat(document.getElementById('pm-cost').value)||0:null;
-    const payload={name,sku:document.getElementById('pm-sku').value.trim(),category:document.getElementById('pm-cat').value,material:document.getElementById('pm-mat').value,price,stock,status:stock<=0?'inactive':'active',description:document.getElementById('pm-desc').value,image1:document.getElementById('pm-img1').value||null,image2:document.getElementById('pm-img2').value||null,direction:dir,borrow_supplier_id:supId||null,is_borrowed:dir!=='own',borrow_date:borrowDate||null,borrow_return_date:returnDate||null,updated_at:new Date().toISOString()};
+    const payload={name,sku:document.getElementById('pm-sku').value.trim()||null,category:document.getElementById('pm-cat').value,material:document.getElementById('pm-mat').value,price,stock,status:stock<=0?'inactive':'active',description:document.getElementById('pm-desc').value,image1:document.getElementById('pm-img1').value||null,image2:document.getElementById('pm-img2').value||null,direction:dir,borrow_supplier_id:supId||null,is_borrowed:dir!=='own',borrow_date:borrowDate||null,borrow_return_date:returnDate||null,updated_at:new Date().toISOString()};
     if(cost!==null)payload.cost=cost;
     if(p){await sb.from('judy_products').update(payload).eq('id',p.id);}
     else{

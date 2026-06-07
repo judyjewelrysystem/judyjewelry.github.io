@@ -419,7 +419,7 @@ async function renderBorrowList(pc,direction,title,subtitle){
     document.getElementById('ret-confirm').onclick=async()=>{
       const d=document.getElementById('ret-date').value||today;
       await sb.from('judy_borrow_records').update({actual_return:d,status:'returned'}).eq('id',id);
-      if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own'}).eq('id',pid);
+      if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own',borrow_date:null,borrow_return_date:null}).eq('id',pid);
       flash('ok','✅ 已標記歸還！');closeModal();
       loadOverdueBadge();
       renderBorrowList(document.getElementById('pc'),direction,title,subtitle);
@@ -490,7 +490,7 @@ window.openBorrowModal=async(id,direction)=>{
   </div>
   <div class="fgrid">
     <div class="fg"><label class="fl">📅 借出日期 *</label><input class="fc" id="bm-bdate" type="date" value="${rec?.borrow_date||new Date().toISOString().split('T')[0]}"></div>
-    <div class="fg"><label class="fl">📅 預計歸還日期 *</label><input class="fc" id="bm-edate" type="date" value="${rec?.expected_return||''}" placeholder="請務必填寫"></div>
+    <div class="fg"><label class="fl">📅 預計歸還日期（選填，有填才提醒）</label><input class="fc" id="bm-edate" type="date" value="${rec?.expected_return||''}" placeholder="請務必填寫"></div>
     <div class="fg"><label class="fl">✅ 實際歸還日期</label><input class="fc" id="bm-adate" type="date" value="${rec?.actual_return||''}"></div>
   </div>
   ${rec?.expected_return&&isOverdue(rec.expected_return)&&rec?.status==='borrowed'?`<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:10px;font-weight:700;color:#c0392b;font-size:13px">⚠️ 此商品已逾期 ${daysDiff(rec.expected_return)} 天未歸還！</div>`:''}
@@ -622,7 +622,7 @@ async function renderOverdue(pc){
     document.getElementById('ret-confirm').onclick=async()=>{
       const d=document.getElementById('ret-date').value||today;
       await sb.from('judy_borrow_records').update({actual_return:d,status:'returned'}).eq('id',id);
-      if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own'}).eq('id',pid);
+      if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own',borrow_date:null,borrow_return_date:null}).eq('id',pid);
       flash('ok','✅ 已標記歸還！');closeModal();loadOverdueBadge();renderOverdue(pc);
     };
   };
