@@ -525,7 +525,7 @@ async function renderDashboard(pc){
 let invProds=[],invSups=[],invCats=[],invMats=[];
 async function renderInventory(pc){
   const[{data:prods},{data:sups},{data:cats}]=await Promise.all([
-    sb.from('judy_products').select('*,judy_suppliers!borrow_supplier_id(name)').order('created_at',{ascending:false}),
+    sb.from('judy_products').select('*').order('created_at',{ascending:false}),
     sb.from('judy_suppliers').select('*').order('name'),
     sb.from('judy_categories').select('*').order('name')
   ]);
@@ -539,7 +539,7 @@ async function renderInventory(pc){
   <div class="sb">
     <input class="fc" id="inv-s" placeholder="🔍 搜尋名稱、貨號...">
     <select class="fc" id="inv-c" style="max-width:150px"><option value="">所有類別</option>${invCats.map(c=>`<option>${c}</option>`).join('')}</select>
-    <select class="fc" id="inv-st" style="max-width:120px"><option value="active">上架</option><option value="">全部</option><option value="inactive">下架</option></select>
+    <select class="fc" id="inv-st" style="max-width:120px"><option value="">全部</option><option value="active">上架</option><option value="inactive">下架</option></select>
   </div>
   <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
     <thead><tr><th>貨號</th><th>照片</th><th>商品名稱</th><th>類別</th><th>材質</th>${isBoss?'<th>成本</th>':''}<th>售價</th><th>庫存</th><th>類型</th><th>廠商</th><th>借出日期</th><th>預計歸還</th><th>狀態</th><th>操作</th></tr></thead>
@@ -560,8 +560,8 @@ async function renderInventory(pc){
       ${isBoss?`<td>${p.cost?fmt(p.cost):'<span style="color:#ef4444;font-size:11px">未填</span>'}</td>`:''}
       <td style="font-weight:800;color:var(--accent)">${fmt(p.price)}</td>
       <td style="font-weight:800">${p.stock}</td>
-      <td><span class="badge ${p.direction==='in'?'':''}${p.direction==='in'?'b-in':p.direction==='out'?'b-out':''}" style="${p.direction==='own'?'background:var(--accent-light);color:var(--text)':''}font-size:10px">${p.direction==='in'?'廠商寄賣':p.direction==='out'?'外借商品':'自有'}</span></td>
-      <td style="font-size:12px;font-weight:700;color:var(--accent)">${p.direction!=='own'?(p['judy_suppliers']?.name||'—'):'—'}</td>
+      <td><span class="badge" style="background:${p.direction==='in'?'#dbeafe':p.direction==='out'?'#fef3c7':'var(--accent-light)'};color:${p.direction==='in'?'#1d4ed8':p.direction==='out'?'#92400e':'var(--text)'};font-size:11px;font-weight:800">${p.direction==='in'?'廠商寄賣':p.direction==='out'?'外借商品':'自有'}</span></td>
+      <td style="font-size:12px;font-weight:700;color:var(--accent)">${p.direction!=='own'?(invSups.find(s=>s.id===p.borrow_supplier_id)?.name||'—'):'—'}</td>
       <td style="font-size:12px">${p.borrow_date?fmtD(p.borrow_date):'—'}</td>
       <td style="font-size:12px">${(()=>{if(!p.borrow_return_date||p.direction==='own'||!p.is_borrowed)return'—';const over=new Date(p.borrow_return_date)<new Date();return over?'<span style="color:#c0392b;font-weight:800">⚠️ '+fmtD(p.borrow_return_date)+'</span>':fmtD(p.borrow_return_date);})()}</td>
       <td>
@@ -639,7 +639,8 @@ window.openProdModal=async(id)=>{
     if(cost!==null)payload.cost=cost;
     if(p){await sb.from('judy_products').update(payload).eq('id',p.id);}
     else{
-      const{data:nd}=await sb.from('judy_products').insert(payload).select().single();
+      const{data:nd,error:insertErr}=await sb.from('judy_products').insert(payload).select().single();
+      if(insertErr){showAlert('pm-a','err','新增失敗：'+(insertErr.message.includes('unique')?'貨號已存在，請更換':insertErr.message));return;}
       // Notify boss if no cost
       if(currentUser.role!=='boss'&&!cost){
         await addNotif('no_cost','⚠️ 商品未填成本',`員工 ${currentUser.display_name} 新增商品「${name}」未填寫成本`,nd?.id,'product');
@@ -648,7 +649,7 @@ window.openProdModal=async(id)=>{
       // Create borrow record
       if(dir!=='own'&&supId&&nd){
         const sName=invSups.find(s=>s.id===supId)?.name||'';
-        await sb.from('judy_borrow_records').insert({product_id:nd.id,product_name:name,product_sku:payload.sku,supplier_id:supId,supplier_name:sName,direction:dir,status:'borrowed',borrow_date:borrowDate||new Date().toISOString().split('T')[0],expected_return:returnDate||null});
+        await sb.from('judy_borrow_records').insert({product_id:nd.id,product_name:name,product_sku:nd?.sku||'',supplier_id:supId,supplier_name:sName,direction:dir,status:'borrowed',borrow_date:borrowDate||new Date().toISOString().split('T')[0],expected_return:returnDate||null});
       }
     }
     flash('ok',p?'商品已更新！':'商品已新增！');closeModal();renderInventory(document.getElementById('pc'));
