@@ -126,8 +126,8 @@ let activeCharts=[];
 
 const fmt=n=>n==null?'—':'NT$'+Number(n).toLocaleString('zh-TW');
 const fmtD=d=>d?new Date(d).toLocaleDateString('zh-TW'):'—';
-const isOverdue=d=>{if(!d)return false;return new Date(d)<new Date();};
-const daysDiff=d=>{if(!d)return 0;return Math.floor((new Date()-new Date(d))/(1000*60*60*24));};
+const isOverdue=d=>{if(!d)return false;const t=new Date(d);t.setHours(23,59,59,999);return t<new Date();};
+const daysDiff=d=>{if(!d)return 0;const today=new Date();today.setHours(0,0,0,0);const target=new Date(d);target.setHours(0,0,0,0);return Math.floor((today-target)/(1000*60*60*24));};
 const getS=()=>{try{return JSON.parse(localStorage.getItem(SESS))}catch{return null}};
 const saveS=u=>localStorage.setItem(SESS,JSON.stringify(u));
 const clearS=()=>localStorage.removeItem(SESS);
@@ -273,7 +273,13 @@ async function loadOverdueBadge(){
     if(n>0){badge.style.display='block';badge.innerHTML=`<span style="background:#ef4444;color:#fff;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:800">⚠️ 逾期 ${n} 筆</span>`;}
     else badge.style.display='none';
   }
-  if(navBtn&&n>0)navBtn.innerHTML=`<span>⚠️</span>逾期警示 <span style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;margin-left:4px">${n}</span>`;
+  if(navBtn){
+    if(n>0){
+      navBtn.innerHTML=`<span>⚠️</span>逾期警示 <span style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:800;margin-left:4px">${n}</span>`;
+    } else {
+      navBtn.innerHTML='<span>⚠️</span>逾期警示';
+    }
+  }
 }
 
 // ===== OVERVIEW =====
@@ -343,12 +349,13 @@ async function renderConsignOut(pc){
 // ===== SHARED BORROW LIST =====
 async function renderBorrowList(pc,direction,title,subtitle){
   const[{data:recs},{data:sups},{data:prods}]=await Promise.all([
-    sb.from('judy_borrow_records').select('*').eq('direction',direction).order('borrow_date',{ascending:false}),
+    sb.from('judy_borrow_records').select('*').order('borrow_date',{ascending:false}),
     sb.from('judy_suppliers').select('*').order('name'),
     sb.from('judy_products').select('id,name,sku,price,status').order('name')
   ]);
   const isBoss=currentUser.role==='boss';
-  const active=(recs||[]).filter(x=>x.status==='borrowed');
+  const allRecs=(recs||[]).filter(x=>!direction||x.direction===direction||(!x.direction&&direction==='own'));
+  const active=allRecs.filter(x=>x.status==='borrowed');
   const totalVal=active.reduce((a,x)=>{const p=(prods||[]).find(pr=>pr.id===x.product_id);return a+(Number(p?.price||0));},0);
 
   pc.innerHTML=`
@@ -379,11 +386,11 @@ async function renderBorrowList(pc,direction,title,subtitle){
   const render=()=>{
     const sv=document.getElementById('bl-s').value.toLowerCase();
     const st=document.getElementById('bl-st').value;
-    const f=(recs||[]).filter(x=>(!sv||(x.product_name?.toLowerCase().includes(sv)||x.supplier_name?.toLowerCase().includes(sv)))&&(!st||x.status===st));
+    const f=allRecs.filter(x=>(!sv||(x.product_name?.toLowerCase().includes(sv)||x.supplier_name?.toLowerCase().includes(sv)))&&(!st||x.status===st));
     document.getElementById('bl-body').innerHTML=f.length===0
       ?`<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無記錄</td></tr>`
       :f.map(x=>{
-        const over=x.status==='borrowed'&&isOverdue(x.expected_return);
+        const over=x.status==='borrowed'&&x.expected_return&&isOverdue(x.expected_return);
         const stBadge=x.status==='borrowed'?(over?'<span class="badge b-over">逾期</span>':'<span class="badge b-in">借出中</span>'):x.status==='returned'?'<span class="badge b-ret">已歸還</span>':'<span class="badge b-sold">待結算</span>';
         return`<tr style="${over?'background:rgba(239,68,68,0.04)':''}">
           <td style="font-weight:800">${x.product_name||'—'}</td>
@@ -418,7 +425,7 @@ async function renderBorrowList(pc,direction,title,subtitle){
       </div>`);
     document.getElementById('ret-confirm').onclick=async()=>{
       const d=document.getElementById('ret-date').value||today;
-      await sb.from('judy_borrow_records').update({actual_return:d,status:'returned'}).eq('id',id);
+      await sb.from('judy_borrow_records').update({actual_return:d,status:'returned',updated_at:new Date().toISOString()}).eq('id',id);
       if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own',borrow_date:null,borrow_return_date:null}).eq('id',pid);
       flash('ok','✅ 已標記歸還！');closeModal();
       loadOverdueBadge();
@@ -621,7 +628,7 @@ async function renderOverdue(pc){
       </div>`);
     document.getElementById('ret-confirm').onclick=async()=>{
       const d=document.getElementById('ret-date').value||today;
-      await sb.from('judy_borrow_records').update({actual_return:d,status:'returned'}).eq('id',id);
+      await sb.from('judy_borrow_records').update({actual_return:d,status:'returned',updated_at:new Date().toISOString()}).eq('id',id);
       if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own',borrow_date:null,borrow_return_date:null}).eq('id',pid);
       flash('ok','✅ 已標記歸還！');closeModal();loadOverdueBadge();renderOverdue(pc);
     };
