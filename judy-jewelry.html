@@ -524,11 +524,15 @@ async function renderDashboard(pc){
 // ===== INVENTORY =====
 let invProds=[],invSups=[],invCats=[],invMats=[];
 async function renderInventory(pc){
-  const[{data:prods},{data:sups},{data:cats}]=await Promise.all([
+  const[{data:prods},{data:sups},{data:cats},{data:borrows}]=await Promise.all([
     sb.from('judy_products').select('*').order('created_at',{ascending:false}),
     sb.from('judy_suppliers').select('*').order('name'),
-    sb.from('judy_categories').select('*').order('name')
+    sb.from('judy_categories').select('*').order('name'),
+    sb.from('judy_borrow_records').select('product_id,status,direction,actual_return,borrow_date,expected_return').order('created_at',{ascending:false})
   ]);
+  // 建立 product_id → borrow record 的對照
+  const borrowMap={};
+  (borrows||[]).forEach(br=>{if(br.product_id&&!borrowMap[br.product_id])borrowMap[br.product_id]=br;});
   invProds=prods||[];invSups=sups||[];
   invCats=[...CATS,...(cats||[]).filter(x=>x.type==='category').map(x=>x.name)];
   invMats=[...MATS,...(cats||[]).filter(x=>x.type==='material').map(x=>x.name)];
@@ -560,13 +564,38 @@ async function renderInventory(pc){
       ${isBoss?`<td>${p.cost?fmt(p.cost):'<span style="color:#ef4444;font-size:11px">未填</span>'}</td>`:''}
       <td style="font-weight:800;color:var(--accent)">${fmt(p.price)}</td>
       <td style="font-weight:800">${p.stock}</td>
-      <td><span class="badge" style="background:${p.direction==='in'?'#dbeafe':p.direction==='out'?'#fef3c7':'var(--accent-light)'};color:${p.direction==='in'?'#1d4ed8':p.direction==='out'?'#92400e':'var(--text)'};font-size:11px;font-weight:800">${p.direction==='in'?'廠商寄賣':p.direction==='out'?'外借商品':'自有'}</span></td>
-      <td style="font-size:12px;font-weight:700;color:var(--accent)">${p.direction!=='own'?(invSups.find(s=>s.id===p.borrow_supplier_id)?.name||'—'):'—'}</td>
-      <td style="font-size:12px">${p.borrow_date?fmtD(p.borrow_date):'—'}</td>
-      <td style="font-size:12px">${(()=>{if(!p.borrow_return_date||p.direction==='own'||!p.is_borrowed)return'—';const over=new Date(p.borrow_return_date)<new Date();return over?'<span style="color:#c0392b;font-weight:800">⚠️ '+fmtD(p.borrow_return_date)+'</span>':fmtD(p.borrow_return_date);})()}</td>
-      <td>
-        <span class="badge ${p.status==='active'?'b-on':'b-off'}">${p.status==='active'?'上架':'下架'}</span>
-      </td>
+      ${(()=>{
+        const br=borrowMap[p.id];
+        const dir=p.direction||'own';
+        const brStatus=br?.status||'';
+        // 類型 badge
+        const typeBadge=dir==='in'?'<span class="badge" style="background:#dbeafe;color:#1d4ed8;font-size:11px">廠商寄賣</span>':dir==='out'?'<span class="badge" style="background:#fef3c7;color:#92400e;font-size:11px">外借商品</span>':'<span class="badge" style="background:var(--accent-light);color:var(--text);font-size:11px">自有</span>';
+        // 廠商名稱
+        const supName=dir!=='own'?(invSups.find(s=>s.id===p.borrow_supplier_id)?.name||'—'):'—';
+        // 借出日期
+        const borrowDate=br?.borrow_date?fmtD(br.borrow_date):(p.borrow_date?fmtD(p.borrow_date):'—');
+        // 預計歸還/實際歸還/狀態
+        let dateCell='—';let statusExtra='';
+        if(dir!=='own'){
+          if(brStatus==='returned'||brStatus==='settled'){
+            dateCell='<span style="color:#16a34a;font-weight:700">✅ '+fmtD(br?.actual_return)+'（已歸還）</span>';
+          } else if(brStatus==='sold_pending'){
+            dateCell='<span style="color:#7c3aed;font-weight:700">💰 待結算</span>';
+          } else if(br?.expected_return){
+            const over=new Date(br.expected_return);over.setHours(23,59,59,999);
+            if(over<new Date()) dateCell='<span style="color:#c0392b;font-weight:700">⚠️ '+fmtD(br.expected_return)+'（逾期）</span>';
+            else dateCell=fmtD(br.expected_return);
+          } else if(p.borrow_return_date){
+            dateCell=fmtD(p.borrow_return_date);
+          }
+          // 狀態額外標籤
+          if(brStatus==='returned') statusExtra='<span class="badge b-ret" style="font-size:10px;margin-left:3px">已歸還</span>';
+          else if(brStatus==='settled') statusExtra='<span class="badge" style="background:#f3e8ff;color:#7c3aed;border:1px solid #c4b5fd;font-size:10px;margin-left:3px">已結算</span>';
+          else if(brStatus==='sold_pending') statusExtra='<span class="badge b-sold" style="font-size:10px;margin-left:3px">待結算</span>';
+          else if(p.is_borrowed) statusExtra='<span class="badge b-in" style="font-size:10px;margin-left:3px">借出中</span>';
+        }
+        return '<td>'+typeBadge+'</td><td style="font-size:12px;font-weight:700;color:var(--accent)">'+supName+'</td><td style="font-size:12px">'+borrowDate+'</td><td style="font-size:12px">'+dateCell+'</td><td><span class="badge '+(p.status==='active'?'b-on':'b-off')+'">'+(p.status==='active'?'上架':'下架')+'</span>'+statusExtra+'</td>';
+      })()}
       <td><div class="flex gap2">
         <button class="btn btn-s btn-xs" onclick="openProdModal('${p.id}')">✏️</button>
         ${isBoss?`<button class="btn btn-d btn-xs" onclick="deleteProd('${p.id}')">🗑️</button>`:''}

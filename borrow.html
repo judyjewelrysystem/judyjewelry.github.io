@@ -374,6 +374,7 @@ async function renderBorrowList(pc,direction,title,subtitle){
         <option value="borrowed">借出中</option>
         <option value="returned">已歸還</option>
         <option value="sold_pending">待結算</option>
+        <option value="settled">已結算</option>
       </select>
     </div>
     <button class="btn btn-p btn-sm" style="margin-left:10px;white-space:nowrap" onclick="openBorrowModal(null,'${direction}')">＋ 新增記錄</button>
@@ -391,7 +392,7 @@ async function renderBorrowList(pc,direction,title,subtitle){
       ?`<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無記錄</td></tr>`
       :f.map(x=>{
         const over=x.status==='borrowed'&&x.expected_return&&isOverdue(x.expected_return);
-        const stBadge=x.status==='borrowed'?(over?'<span class="badge b-over">逾期</span>':'<span class="badge b-in">借出中</span>'):x.status==='returned'?'<span class="badge b-ret">已歸還</span>':'<span class="badge b-sold">待結算</span>';
+        const stBadge=x.status==='borrowed'?(over?'<span class="badge b-over">逾期</span>':'<span class="badge b-in">借出中</span>'):x.status==='returned'?'<span class="badge b-ret">已歸還</span>':x.status==='settled'?'<span class="badge" style="background:#f3e8ff;color:#7c3aed;border:1px solid #c4b5fd;font-size:11px;font-weight:800">💵 已結算</span>':'<span class="badge b-sold">待結算</span>';
         return`<tr style="${over?'background:rgba(239,68,68,0.04)':''}">
           <td style="font-weight:800">${x.product_name||'—'}</td>
           <td><code style="font-size:11px;background:var(--accent-light);padding:2px 5px;border-radius:4px">${x.product_sku||'—'}</code></td>
@@ -426,7 +427,12 @@ async function renderBorrowList(pc,direction,title,subtitle){
     document.getElementById('ret-confirm').onclick=async()=>{
       const d=document.getElementById('ret-date').value||today;
       await sb.from('judy_borrow_records').update({actual_return:d,status:'returned',updated_at:new Date().toISOString()}).eq('id',id);
-      if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own',borrow_date:null,borrow_return_date:null}).eq('id',pid);
+      if(pid){
+        // 廠商寄賣(in)歸還 → 下架；外借商品(out)歸還 → 保持上架
+        const prodUpdate={is_borrowed:false,borrow_return_actual:d};
+        if(direction==='in') prodUpdate.status='inactive';
+        await sb.from('judy_products').update(prodUpdate).eq('id',pid);
+      }
       flash('ok','✅ 已標記歸還！');closeModal();
       loadOverdueBadge();
       renderBorrowList(document.getElementById('pc'),direction,title,subtitle);
@@ -454,7 +460,7 @@ async function renderBorrowList(pc,direction,title,subtitle){
       const pay=document.getElementById('ms-pay').value;
       const note=document.getElementById('ms-note').value;
       await sb.from('judy_borrow_records').update({status:'sold_pending',note:(note?note+' | ':'')+'已售出，待結算'}).eq('id',id);
-      if(productId)await sb.from('judy_products').update({stock:0,status:'inactive'}).eq('id',productId);
+      if(productId)await sb.from('judy_products').update({stock:0,status:'inactive',is_borrowed:false}).eq('id',productId);
       // Add notification for boss
       await sb.from('judy_notifications').insert({type:'sold_pending',title:`💰 廠商商品已售出，待填結算`,message:`${productName}（${supplierName}）已售出 ${fmt(amt)}，請填寫結算金額`,created_by:currentUser.display_name});
       // Pre-create settlement record
@@ -628,8 +634,15 @@ async function renderOverdue(pc){
       </div>`);
     document.getElementById('ret-confirm').onclick=async()=>{
       const d=document.getElementById('ret-date').value||today;
+      // 取得該記錄的 direction
+      const{data:recData}=await sb.from('judy_borrow_records').select('direction').eq('id',id).maybeSingle();
+      const recDir=recData?.direction||'in';
       await sb.from('judy_borrow_records').update({actual_return:d,status:'returned',updated_at:new Date().toISOString()}).eq('id',id);
-      if(pid)await sb.from('judy_products').update({is_borrowed:false,borrow_supplier_id:null,direction:'own',borrow_date:null,borrow_return_date:null}).eq('id',pid);
+      if(pid){
+        const prodUpdate={is_borrowed:false,borrow_return_actual:d};
+        if(recDir==='in') prodUpdate.status='inactive';
+        await sb.from('judy_products').update(prodUpdate).eq('id',pid);
+      }
       flash('ok','✅ 已標記歸還！');closeModal();loadOverdueBadge();renderOverdue(pc);
     };
   };
@@ -803,7 +816,12 @@ async function renderSettlement(pc){
       } else {
         await sb.from('judy_settlements').insert({type:'supplier_sold',supplier_id:supplierId||null,supplier_name:supplierName,product_name:productName,product_id:productId||null,sale_amount:saleAmt,settlement_amount:settleAmt,payment_method:pay,note,settled_by:currentUser.display_name,created_by:currentUser.display_name});
       }
-      if(borrowId)await sb.from('judy_borrow_records').update({status:'returned',actual_return:new Date().toISOString().split('T')[0]}).eq('id',borrowId);
+      if(borrowId){
+        await sb.from('judy_borrow_records').update({status:'settled',actual_return:new Date().toISOString().split('T')[0]}).eq('id',borrowId);
+        // 結算完成→確保下架
+        const{data:br}=await sb.from('judy_borrow_records').select('product_id').eq('id',borrowId).maybeSingle();
+        if(br?.product_id) await sb.from('judy_products').update({status:'inactive',is_borrowed:false}).eq('id',br.product_id);
+      }
       // Mark notification as read
       await sb.from('judy_notifications').update({is_read:true}).eq('type','sold_pending').eq('is_read',false);
       flash('ok','✅ 結算已完成');closeModal();renderSettlement(document.getElementById('pc'));
