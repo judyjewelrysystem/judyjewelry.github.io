@@ -1222,51 +1222,90 @@ async function renderReports(pc){
 async function renderUsers(pc){
   const isBoss=currentUser.role==='boss';
   const isMgr=currentUser.role==='manager';
-  const{data:users}=await sb.from('judy_users').select('id,username,display_name,role,created_at').order('created_at');
-  const RM={boss:{l:'老闆',c:'#c0392b'},manager:{l:'主管',c:'#c9856a'},staff:{l:'員工',c:'#888'}};
+  const isStaff=currentUser.role==='staff';
 
-  const renderTable=()=>{
-    pc.innerHTML=`
-    <div class="flex aic jsb mb3">
-      <div class="ptitle" style="margin:0">👥 帳號管理</div>
-      ${(isBoss||isMgr)?'<button class="btn btn-p" id="add-user-btn">＋ 建立帳號</button>':''}
-    </div>
-    <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
-      <thead><tr><th>帳號</th><th>顯示名稱</th><th>角色</th><th>建立時間</th><th>操作</th></tr></thead>
-      <tbody>${(users||[]).map(u=>`<tr>
-        <td><code style="font-size:12px;background:var(--accent-light);padding:2px 8px;border-radius:4px">${u.username}</code></td>
-        <td style="font-weight:800">${u.display_name}${u.id===currentUser.id?'<span style="font-size:11px;color:var(--text3);margin-left:5px">（你）</span>':''}</td>
-        <td><span style="font-weight:800;color:${RM[u.role]?.c||'#888'}">${RM[u.role]?.l||u.role}</span></td>
-        <td style="font-size:12px">${fmtD(u.created_at)}</td>
+  // 員工只看自己
+  let query=sb.from('judy_users').select('id,username,display_name,role,password,created_at');
+  if(isStaff) query=query.eq('id',currentUser.id);
+  else if(isMgr) query=query.in('role',['manager','staff']); // 主管看主管+員工
+  const{data:allUsers}=await query;
+
+  // 排序：老闆→主管→員工，自己排第一
+  const roleOrder={boss:0,manager:1,staff:2};
+  const users=(allUsers||[]).sort((a,b)=>{
+    if(a.id===currentUser.id) return -1;
+    if(b.id===currentUser.id) return 1;
+    return roleOrder[a.role]-roleOrder[b.role]||a.display_name.localeCompare(b.display_name);
+  });
+
+  pc.innerHTML=`
+  <div class="flex aic jsb mb3">
+    <div class="ptitle" style="margin:0">👥 帳號管理</div>
+    ${!isStaff?'<button class="btn btn-p" id="add-user-btn">＋ 建立帳號</button>':''}
+  </div>
+  <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
+    <thead><tr><th>帳號</th><th>顯示名稱</th><th>角色</th><th>密碼</th><th>操作</th></tr></thead>
+    <tbody>${users.map(u=>{
+      const isMe=u.id===currentUser.id;
+      const roleLabel={boss:'⭐ 老闆',manager:'🔰 主管',staff:'💼 員工'}[u.role]||u.role;
+      const roleColor={boss:'#c0392b',manager:'#c9856a',staff:'#888'}[u.role];
+      // 密碼顯示邏輯
+      let pwdDisplay='';
+      let canEdit=false;
+      if(isBoss){
+        pwdDisplay=u.password; canEdit=true;
+      } else if(isMgr){
+        if(isMe){pwdDisplay=u.password;canEdit=true;}
+        else if(u.role==='manager'){pwdDisplay='••••••';canEdit=false;}
+        else if(u.role==='staff'){pwdDisplay=u.password;canEdit=true;}
+      } else if(isStaff&&isMe){
+        pwdDisplay=u.password;canEdit=true;
+      }
+      return`<tr style="${isMe?'background:var(--accent-light)':''}">
+        <td><code style="font-size:12px;background:var(--accent-light);padding:2px 8px;border-radius:4px">${u.username}</code>
+          ${isMe?'<span style="font-size:11px;color:var(--text3);margin-left:5px">（你）</span>':''}
+        </td>
+        <td style="font-weight:800">${u.display_name}</td>
+        <td><span style="font-weight:800;color:${roleColor}">${roleLabel}</span></td>
+        <td style="font-family:monospace;font-size:13px;color:var(--text2)">${pwdDisplay}</td>
         <td><div class="flex gap2">
-          ${isBoss?`<button class="btn btn-s btn-xs" onclick="openUserModal('${u.id}')">✏️ 編輯</button>`:''}
-          ${isBoss&&u.id!==currentUser.id?`<button class="btn btn-d btn-xs" onclick="deleteUser('${u.id}')">🗑️</button>`:''}
+          ${canEdit?`<button class="btn btn-s btn-xs" onclick="openUserModal('${u.id}')">✏️ 編輯</button>`:''}
+          ${isBoss&&!isMe?`<button class="btn btn-d btn-xs" onclick="deleteUser('${u.id}')">🗑️</button>`:''}
         </div></td>
-      </tr>`).join('')}</tbody>
-    </table></div></div>`;
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div></div>`;
 
-    document.getElementById('add-user-btn')?.addEventListener('click',()=>openUserModal(null));
-  };
-  renderTable();
+  // 新增帳號
+  document.getElementById('add-user-btn')?.addEventListener('click',()=>openUserModal(null));
 
   window.openUserModal=(id)=>{
-    const u=id?(users||[]).find(x=>x.id===id):null;
-    const roles=isBoss?['boss','manager','staff']:['staff'];
-    const rlabels={boss:'老闆',manager:'主管',staff:'員工'};
-    openModal(u?'編輯帳號':'建立帳號',`
+    const u=id?users.find(x=>x.id===id):null;
+    // 可建立的角色
+    let roles=[];
+    if(isBoss) roles=[{v:'boss',l:'⭐ 老闆'},{v:'manager',l:'🔰 主管'},{v:'staff',l:'💼 員工'}];
+    else if(isMgr) roles=[{v:'manager',l:'🔰 主管'},{v:'staff',l:'💼 員工'}];
+    // 主管不能編輯其他主管
+    const canEditThis=isBoss||(isMgr&&(u?.role==='staff'||!u));
+    if(!canEditThis&&id){flash('err','無權限編輯此帳號');return;}
+
+    openModal(u?`編輯帳號 — ${u.display_name}`:'建立新帳號',`
     <div id="nu-a"></div>
-    <div class="fg"><label class="fl">帳號${u?' (不可修改)':' *'}</label>
-      <input class="fc" id="nu-user" value="${u?.username||''}" ${u?'readonly':''} placeholder="登入帳號（英文數字）">
+    <div class="fg">
+      <label class="fl">帳號${u?' <span style="color:var(--text3);font-weight:600;font-size:12px">（建立後不可修改）</span>':' *'}</label>
+      <input class="fc" id="nu-user" value="${u?.username||''}" ${u?'readonly style="background:var(--accent-light);cursor:not-allowed"':''} placeholder="英文數字，建立後不可更改">
     </div>
-    ${!u?'<div class="fg"><label class="fl">密碼 *</label><input class="fc" id="nu-pass" type="password" placeholder="設定密碼"></div>':''}
     <div class="fg"><label class="fl">顯示名稱 *</label>
       <input class="fc" id="nu-name" value="${u?.display_name||''}" placeholder="員工姓名">
     </div>
-    <div class="fg"><label class="fl">角色</label>
-      <select class="fc" id="nu-role">
-        ${roles.map(r=>`<option value="${r}"${u?.role===r?' selected':''}>${rlabels[r]}</option>`).join('')}
-      </select>
+    <div class="fg"><label class="fl">${u?'更改密碼':'密碼 *'}</label>
+      <input class="fc" id="nu-pass" type="text" value="${u?.password||''}" placeholder="${u?'輸入新密碼':'設定密碼'}">
     </div>
+    ${!u||isBoss?`<div class="fg"><label class="fl">角色</label>
+      <select class="fc" id="nu-role">
+        ${roles.map(r=>`<option value="${r.v}"${u?.role===r.v?' selected':''}>${r.l}</option>`).join('')}
+      </select>
+    </div>`:`<input type="hidden" id="nu-role" value="${u?.role||'staff'}">`}
     <div class="flex gap2" style="justify-content:flex-end;margin-top:4px">
       <button class="btn btn-s" onclick="closeModal()">取消</button>
       <button class="btn btn-p" id="nu-save">💾 ${u?'儲存變更':'建立帳號'}</button>
@@ -1274,32 +1313,41 @@ async function renderUsers(pc){
 
     document.getElementById('nu-save').onclick=async()=>{
       const name=document.getElementById('nu-name').value.trim();
+      const pass=document.getElementById('nu-pass').value.trim();
       const role=document.getElementById('nu-role').value;
       if(!name){showAlert('nu-a','err','請填寫顯示名稱');return;}
+      if(!pass){showAlert('nu-a','err','請填寫密碼');return;}
       if(u){
-        await sb.from('judy_users').update({display_name:name,role}).eq('id',u.id);
-        // Update current session if editing self
-        if(u.id===currentUser.id){currentUser.display_name=name;currentUser.role=role;saveS(currentUser);}
-        flash('ok','帳號已更新');closeModal();renderUsers(document.getElementById('pc'));
+        // 更新
+        const updates={display_name:name,password:pass};
+        if(isBoss) updates.role=role;
+        const{error}=await sb.from('judy_users').update(updates).eq('id',u.id);
+        if(error){showAlert('nu-a','err','更新失敗：'+error.message);return;}
+        if(u.id===currentUser.id){currentUser.display_name=name;currentUser.password=pass;saveS(currentUser);}
+        flash('ok','✅ 帳號已更新');closeModal();renderUsers(document.getElementById('pc'));
       } else {
         const uname=document.getElementById('nu-user').value.trim();
-        const pass=document.getElementById('nu-pass').value;
-        if(!uname||!pass){showAlert('nu-a','err','請填寫所有欄位');return;}
-        if(!isBoss&&role!=='staff'){showAlert('nu-a','err','主管只能建立員工帳號');return;}
+        if(!uname){showAlert('nu-a','err','請填寫帳號');return;}
+        // 檢查帳號是否重複
+        const{data:exist}=await sb.from('judy_users').select('id').eq('username',uname).maybeSingle();
+        if(exist){showAlert('nu-a','err','此帳號已存在，請換一個');return;}
+        if(!isBoss&&role==='boss'){showAlert('nu-a','err','無權限建立老闆帳號');return;}
         const{error}=await sb.from('judy_users').insert({username:uname,password:pass,display_name:name,role});
-        if(error){showAlert('nu-a','err',error.message.includes('unique')?'帳號已存在':'建立失敗：'+error.message);return;}
-        flash('ok','帳號已建立');closeModal();renderUsers(document.getElementById('pc'));
+        if(error){showAlert('nu-a','err','建立失敗：'+error.message);return;}
+        flash('ok','✅ 帳號已建立');closeModal();renderUsers(document.getElementById('pc'));
       }
     };
   };
 
   window.deleteUser=async(id)=>{
+    if(!isBoss){flash('err','僅老闆可刪除帳號');return;}
     if(!confirm('確定要刪除此帳號？此操作無法復原。'))return;
     const{error}=await sb.from('judy_users').delete().eq('id',id);
-    if(error){flash('err','刪除失敗');return;}
+    if(error){flash('err','刪除失敗：'+error.message);return;}
     flash('ok','帳號已刪除');renderUsers(document.getElementById('pc'));
   };
 }
+
 
 // ===== START =====
 document.addEventListener('DOMContentLoaded',renderApp);

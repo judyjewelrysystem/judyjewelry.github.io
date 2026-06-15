@@ -428,10 +428,13 @@ async function renderBorrowList(pc,direction,title,subtitle){
       const d=document.getElementById('ret-date').value||today;
       await sb.from('judy_borrow_records').update({actual_return:d,status:'returned',updated_at:new Date().toISOString()}).eq('id',id);
       if(pid){
-        // 廠商寄賣(in)歸還 → 下架；外借商品(out)歸還 → 保持上架
-        const prodUpdate={is_borrowed:false,borrow_return_actual:d};
-        if(direction==='in') prodUpdate.status='inactive';
-        await sb.from('judy_products').update(prodUpdate).eq('id',pid);
+        if(direction==='in'){
+          // 廠商寄賣歸還 → 下架
+          await sb.from('judy_products').update({is_borrowed:false,status:'inactive',borrow_return_actual:d}).eq('id',pid);
+        } else {
+          // 外借商品歸還 → 恢復自有，保持上架
+          await sb.from('judy_products').update({is_borrowed:false,direction:'own',borrow_supplier_id:null,borrow_date:null,borrow_return_date:null,borrow_return_actual:d}).eq('id',pid);
+        }
       }
       flash('ok','✅ 已標記歸還！');closeModal();
       loadOverdueBadge();
@@ -639,9 +642,11 @@ async function renderOverdue(pc){
       const recDir=recData?.direction||'in';
       await sb.from('judy_borrow_records').update({actual_return:d,status:'returned',updated_at:new Date().toISOString()}).eq('id',id);
       if(pid){
-        const prodUpdate={is_borrowed:false,borrow_return_actual:d};
-        if(recDir==='in') prodUpdate.status='inactive';
-        await sb.from('judy_products').update(prodUpdate).eq('id',pid);
+        if(recDir==='in'){
+          await sb.from('judy_products').update({is_borrowed:false,status:'inactive',borrow_return_actual:d}).eq('id',pid);
+        } else {
+          await sb.from('judy_products').update({is_borrowed:false,direction:'own',borrow_supplier_id:null,borrow_date:null,borrow_return_date:null,borrow_return_actual:d}).eq('id',pid);
+        }
       }
       flash('ok','✅ 已標記歸還！');closeModal();loadOverdueBadge();renderOverdue(pc);
     };
