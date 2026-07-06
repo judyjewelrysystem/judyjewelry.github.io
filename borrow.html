@@ -114,6 +114,19 @@ const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI
 const sb=supabase.createClient(SURL,SKEY);
 
 const SESS='judy_v4';
+function exportBorrowCSV(data,dir){
+  const rows=[['類型','商品名稱','貨號','廠商','借出日期','預計歸還','實際歸還','狀態','備註'],
+    ...(data||[]).filter(x=>dir==='all'||!dir||x.direction===dir).map(x=>[
+      x.direction==='in'?'廠商寄賣':'外借商品',
+      x.product_name||'',x.product_sku||'',x.supplier_name||'',
+      x.borrow_date||'',x.expected_return||'',x.actual_return||'',
+      x.status==='borrowed'?'借出中':x.status==='returned'?'已歸還':x.status==='settled'?'已結算':'待結算',
+      x.note||''
+    ])];
+  const nl='\n';const csv=rows.map(r=>r.map(x=>'"'+String(x==null?'':x)+'"').join(',')).join(nl);
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
+  a.download='廠商借還_'+new Date().toLocaleDateString('zh-TW')+'.csv';a.click();
+}
 const THEME_KEY='judy_theme';
 const PAY_METHODS=['現金','刷卡','轉帳','LINE Pay','貨到付款','微信支付','支付寶'];
 const THEMES={white:{bg:''},rose:{bg:'rose'},latte:{bg:'latte'},lavender:{bg:'lavender'}};
@@ -355,6 +368,7 @@ async function renderBorrowList(pc,direction,title,subtitle){
   ]);
   const isBoss=currentUser.role==='boss';
   const allRecs=(recs||[]).filter(x=>!direction||x.direction===direction||(!x.direction&&direction==='own'));
+  window._currentBorrowRecs=allRecs;
   const active=allRecs.filter(x=>x.status==='borrowed');
   const totalVal=active.reduce((a,x)=>{const p=(prods||[]).find(pr=>pr.id===x.product_id);return a+(Number(p?.price||0));},0);
 
@@ -377,7 +391,10 @@ async function renderBorrowList(pc,direction,title,subtitle){
         <option value="settled">已結算</option>
       </select>
     </div>
-    <button class="btn btn-p btn-sm" style="margin-left:10px;white-space:nowrap" onclick="openBorrowModal(null,'${direction}')">＋ 新增記錄</button>
+    <div class="flex gap2" style="margin-left:10px">
+      <button class="btn btn-s btn-sm" onclick="exportBorrowCSV(window._currentBorrowRecs||[],'${direction}')">📥 匯出</button>
+      <button class="btn btn-p btn-sm" style="white-space:nowrap" onclick="openBorrowModal(null,'${direction}')">＋ 新增記錄</button>
+    </div>
   </div>
   <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
     <thead><tr><th>商品</th><th>貨號</th><th>廠商</th><th>借出日期</th><th>預計歸還</th><th>實際歸還</th><th>狀態</th><th>備註</th><th>操作</th></tr></thead>
@@ -394,7 +411,10 @@ async function renderBorrowList(pc,direction,title,subtitle){
         const over=x.status==='borrowed'&&x.expected_return&&isOverdue(x.expected_return);
         const stBadge=x.status==='borrowed'?(over?'<span class="badge b-over">逾期</span>':'<span class="badge b-in">借出中</span>'):x.status==='returned'?'<span class="badge b-ret">已歸還</span>':x.status==='settled'?'<span class="badge" style="background:#f3e8ff;color:#7c3aed;border:1px solid #c4b5fd;font-size:11px;font-weight:800">💵 已結算</span>':'<span class="badge b-sold">待結算</span>';
         return`<tr style="${over?'background:rgba(239,68,68,0.04)':''}">
-          <td style="font-weight:800">${x.product_name||'—'}</td>
+          <td>
+            ${x.product_photo?`<img src="${x.product_photo}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:6px">`:''}
+            <span style="font-weight:800">${x.product_name||'—'}</span>
+          </td>
           <td><code style="font-size:11px;background:var(--accent-light);padding:2px 5px;border-radius:4px">${x.product_sku||'—'}</code></td>
           <td style="font-weight:700">${x.supplier_name||'—'}</td>
           <td style="font-size:12px">${fmtD(x.borrow_date)}</td>
@@ -559,7 +579,8 @@ window.openBorrowModal=async(id,direction)=>{
       }
     }
     flash('ok',rec?'記錄已更新':'記錄已新增');
-    closeModal();loadOverdueBadge();
+    closeModal();
+    await loadOverdueBadge();
     navigate(curPage);
   };
 };
@@ -568,7 +589,7 @@ window.openBorrowModal=async(id,direction)=>{
 async function renderReturned(pc){
   const{data:recs}=await sb.from('judy_borrow_records').select('*').eq('status','returned').order('actual_return',{ascending:false});
   pc.innerHTML=`
-  <div class="ptitle">✅ 已歸還記錄</div>
+  <div class="flex aic jsb mb3"><div class="ptitle" style="margin:0">✅ 已歸還記錄</div><button class="btn btn-s btn-sm" id="ret-export">📥 匯出</button></div>
   <div class="sb"><input class="fc" id="ret-s" placeholder="🔍 搜尋商品、廠商..."></div>
   <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
     <thead><tr><th>類型</th><th>商品</th><th>貨號</th><th>廠商</th><th>借出日期</th><th>預計歸還</th><th>實際歸還</th><th>備註</th></tr></thead>

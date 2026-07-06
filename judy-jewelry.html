@@ -356,16 +356,18 @@ function renderLayout(app){
       <div class="user-role">${{boss:'⭐ 老闆',manager:'🔰 主管',staff:'💼 員工'}[currentUser.role]}</div>
       <div class="theme-btns" style="margin-top:8px">${Object.entries(THEMES).map(([k,v])=>`<div class="theme-btn" data-t="${k}" title="${v.title}" style="background:${k==='white'?'#fff':k==='rose'?'linear-gradient(135deg,#f5d0d8,#c9856a)':k==='latte'?'linear-gradient(135deg,#ece0d0,#c8a050)':'linear-gradient(135deg,#e4dcf8,#8070c8)'}" onclick="applyTheme('${k}')"></div>`).join('')}</div>
       <button class="ua-btn" id="pwd-btn">🔑 修改密碼</button>
-      <button class="ua-btn logout-btn" id="logout-btn">🚪 登出系統</button>
+      
     </div>
   </nav>
   <div class="main">
     <div class="topbar">
       <button class="menu-btn" id="menu-btn">☰</button>
       <div id="tb-title" style="font-weight:900;font-size:15px;color:var(--text);flex:1;text-align:center"></div>
-      <div style="display:flex;align-items:center;gap:10px">
-        ${isBoss?`<button class="btn btn-sm" id="notif-btn" style="position:relative">🔔 <span id="notif-count" class="notif-dot" style="display:none"></span></button>`:''}
-        <div style="font-size:11px;color:var(--text3);font-weight:700">${new Date().toLocaleDateString('zh-TW',{month:'long',day:'numeric'})}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${isBoss?`<button class="btn btn-sm" id="notif-btn" style="position:relative;padding:6px 10px">🔔<span id="notif-count" class="notif-dot" style="display:none"></span></button>`:''}
+        <div style="font-size:11px;color:var(--text3);font-weight:700;display:none" class="topbar-date">${new Date().toLocaleDateString('zh-TW',{month:'long',day:'numeric'})}</div>
+        <button onclick="navigate('users')" style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--accent-light);color:var(--text);font-size:13px;font-weight:700;cursor:pointer">👤 ${currentUser.display_name}</button>
+        <button id="logout-btn" class="btn btn-sm" style="background:var(--btn-bg);color:var(--btn-text);padding:6px 12px;font-size:13px">🚪 登出</button>
       </div>
     </div>
     <div class="page" id="pc"></div>
@@ -389,7 +391,8 @@ function renderLayout(app){
   nl.appendChild(link);
 
   document.getElementById('logout-btn').onclick=()=>{clearS();currentUser=null;renderApp();};
-  document.getElementById('pwd-btn').onclick=()=>showChangePwd();
+  // 移除舊的 pwd-btn（已移入帳號管理）
+  // 修改密碼已移入帳號管理編輯
   document.getElementById('menu-btn').onclick=()=>toggleSidebar();
   document.getElementById('mob-ov').onclick=()=>toggleSidebar(false);
   if(isBoss){
@@ -522,7 +525,7 @@ async function renderDashboard(pc){
 }
 
 // ===== INVENTORY =====
-let invProds=[],invSups=[],invCats=[],invMats=[];
+let invProds=[],invSups=[],invCats=[],invMats=[],invGems=[];
 async function renderInventory(pc){
   const[{data:prods},{data:sups},{data:cats},{data:borrows}]=await Promise.all([
     sb.from('judy_products').select('*').order('created_at',{ascending:false}),
@@ -530,12 +533,24 @@ async function renderInventory(pc){
     sb.from('judy_categories').select('*').order('name'),
     sb.from('judy_borrow_records').select('product_id,status,direction,actual_return,borrow_date,expected_return').order('created_at',{ascending:false})
   ]);
-  // 建立 product_id → borrow record 的對照
+  // 建立 product_id → 最新 borrow record 的對照
+  // 優先顯示最新的 borrowed 狀態，若都歸還則顯示最新一筆
   const borrowMap={};
-  (borrows||[]).forEach(br=>{if(br.product_id&&!borrowMap[br.product_id])borrowMap[br.product_id]=br;});
+  // borrows 已按 created_at desc 排序，所以第一筆就是最新的
+  (borrows||[]).forEach(br=>{
+    if(!br.product_id) return;
+    const existing=borrowMap[br.product_id];
+    if(!existing){borrowMap[br.product_id]=br;return;}
+    // 優先保留 borrowed 狀態（未歸還）
+    if(br.status==='borrowed'&&existing.status!=='borrowed') borrowMap[br.product_id]=br;
+    // 同樣狀態取最新（created_at 更大）
+    else if(br.status===existing.status&&br.created_at>existing.created_at) borrowMap[br.product_id]=br;
+  });
   invProds=prods||[];invSups=sups||[];
   invCats=[...CATS,...(cats||[]).filter(x=>x.type==='category').map(x=>x.name)];
   invMats=[...MATS,...(cats||[]).filter(x=>x.type==='material').map(x=>x.name)];
+  invGems=['紅寶石','藍寶石',...(cats||[]).filter(x=>x.type==='gemstone').map(x=>x.name)];
+  invGems=['紅寶石','藍寶石',...(cats||[]).filter(x=>x.type==='gemstone').map(x=>x.name)];
   const isBoss=currentUser.role==='boss';
 
   pc.innerHTML=`
@@ -543,24 +558,40 @@ async function renderInventory(pc){
   <div class="sb">
     <input class="fc" id="inv-s" placeholder="🔍 搜尋名稱、貨號...">
     <select class="fc" id="inv-c" style="max-width:150px"><option value="">所有類別</option>${invCats.map(c=>`<option>${c}</option>`).join('')}</select>
-    <select class="fc" id="inv-st" style="max-width:120px"><option value="">全部</option><option value="active">上架</option><option value="inactive">下架</option></select>
+    <select class="fc" id="inv-st" style="max-width:120px"><option value="">全部狀態</option><option value="active">上架</option><option value="inactive">下架</option></select>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:700;color:var(--text3)">類型：</span>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap"><input type="checkbox" id="inv-t-own" checked onchange="renderInvRows()"> 公司</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap"><input type="checkbox" id="inv-t-in" checked onchange="renderInvRows()"> 廠商寄賣</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap"><input type="checkbox" id="inv-t-out" checked onchange="renderInvRows()"> 外借商品</label>
+    </div>
+    <button class="btn btn-s btn-sm" onclick="exportInvCSV()">📥 匯出CSV</button>
   </div>
   <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
-    <thead><tr><th>貨號</th><th>照片</th><th>商品名稱</th><th>類別</th><th>材質</th>${isBoss?'<th>成本</th>':''}<th>售價</th><th>庫存</th><th>類型</th><th>廠商</th><th>借出日期</th><th>預計歸還</th><th>狀態</th><th>操作</th></tr></thead>
+    <thead><tr><th>貨號</th><th>照片</th><th>商品名稱</th><th>類別</th><th>材質</th><th>寶石</th>${isBoss?'<th>成本</th>':''}<th>售價</th><th>庫存</th><th>類型</th><th>廠商</th><th>借出日期</th><th>預計歸還</th><th>狀態</th><th>操作</th></tr></thead>
     <tbody id="inv-body"></tbody>
   </table></div></div>`;
 
+  window.renderInvRows=()=>render();
   const render=()=>{
     const s=document.getElementById('inv-s').value.toLowerCase();
     const c=document.getElementById('inv-c').value;
     const st=document.getElementById('inv-st').value;
-    const f=invProds.filter(p=>(!s||(p.name?.toLowerCase().includes(s)||p.sku?.toLowerCase().includes(s)))&&(!c||p.category===c)&&(!st||p.status===st));
-    document.getElementById('inv-body').innerHTML=f.length===0?`<tr><td colspan="${isBoss?14:13}" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無商品</td></tr>`:
+    const tOwn=document.getElementById('inv-t-own')?.checked!==false;
+    const tIn=document.getElementById('inv-t-in')?.checked!==false;
+    const tOut=document.getElementById('inv-t-out')?.checked!==false;
+    const f=invProds.filter(p=>{
+      const dir=p.direction||'own';
+      return (!s||(p.name?.toLowerCase().includes(s)||p.sku?.toLowerCase().includes(s)))
+        &&(!c||p.category===c)&&(!st||p.status===st)
+        &&((dir==='own'&&tOwn)||(dir==='in'&&tIn)||(dir==='out'&&tOut));
+    });
+    document.getElementById('inv-body').innerHTML=f.length===0?`<tr><td colspan="${isBoss?15:14}" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無商品</td></tr>`:
     f.map(p=>`<tr>
       <td><code style="font-size:11px;background:var(--accent-light);padding:2px 6px;border-radius:4px">${p.sku||'—'}</code></td>
       <td>${p.image1?`<img src="${p.image1}" style="width:42px;height:42px;object-fit:cover;border-radius:8px">`:'<span style="color:var(--text3);font-size:11px">無</span>'}</td>
       <td style="font-weight:800">${p.name}</td>
-      <td>${p.category||'—'}</td><td>${p.material||'—'}</td>
+      <td>${p.category||'—'}</td><td>${p.material||'—'}</td><td>${p.gemstone||'—'}</td><td>${p.gemstone||'—'}</td>
       ${isBoss?`<td>${p.cost?fmt(p.cost):'<span style="color:#ef4444;font-size:11px">未填</span>'}</td>`:''}
       <td style="font-weight:800;color:var(--accent)">${fmt(p.price)}</td>
       <td style="font-weight:800">${p.stock}</td>
@@ -569,7 +600,7 @@ async function renderInventory(pc){
         const dir=p.direction||'own';
         const brStatus=br?.status||'';
         // 類型 badge
-        const typeBadge=dir==='in'?'<span class="badge" style="background:#dbeafe;color:#1d4ed8;font-size:11px">廠商寄賣</span>':dir==='out'?'<span class="badge" style="background:#fef3c7;color:#92400e;font-size:11px">外借商品</span>':'<span class="badge" style="background:var(--accent-light);color:var(--text);font-size:11px">自有</span>';
+        const typeBadge=dir==='in'?'<span class="badge" style="background:#dbeafe;color:#1d4ed8;font-size:11px">廠商寄賣</span>':dir==='out'?'<span class="badge" style="background:#fef3c7;color:#92400e;font-size:11px">外借商品</span>':'<span class="badge" style="background:var(--accent-light);color:var(--text);font-size:11px">公司</span>';
         // 廠商名稱
         const supName=dir!=='own'?(invSups.find(s=>s.id===p.borrow_supplier_id)?.name||'—'):'—';
         // 借出日期
@@ -606,6 +637,12 @@ async function renderInventory(pc){
   ['inv-s','inv-c','inv-st'].forEach(id=>document.getElementById(id).oninput=render);
   document.getElementById('inv-c').onchange=render;
   document.getElementById('inv-st').onchange=render;
+  window.exportInvCSV=()=>{
+    const rows=[['貨號','商品名稱','類別','材質','寶石','售價','庫存','類型','廠商','借出日期','預計歸還','狀態'],
+      ...invProds.map(p=>{const br=borrowMap[p.id];const dir=p.direction||'own';const sup=dir!=='own'?(invSups.find(s=>s.id===p.borrow_supplier_id)?.name||''):'';return[p.sku||'',p.name,p.category||'',p.material||'',p.gemstone||'',p.price,p.stock,dir==='in'?'廠商寄賣':dir==='out'?'外借商品':'公司',sup,br?.borrow_date||'',br?.expected_return||'',p.status==='active'?'上架':'下架'];})];
+    const nl='\n';const csv=rows.map(r=>r.map(x=>'"'+String(x==null?'':x)+'"').join(',')).join(nl);
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='庫存清單_'+new Date().toLocaleDateString('zh-TW')+'.csv';a.click();
+  };
 }
 window.openProdModal=async(id)=>{
   const p=id?invProds.find(x=>x.id===id):null;
@@ -623,12 +660,16 @@ window.openProdModal=async(id)=>{
       <select class="fc" id="pm-mat"><option value="">請選擇</option>${invMats.map(m=>`<option${p?.material===m?' selected':''}>${m}</option>`).join('')}</select>
       <div class="flex gap2" style="margin-top:5px"><input class="fc" id="pm-nmat" style="flex:1;padding:6px 10px;font-size:12px" placeholder="新增材質..."><button class="btn btn-s btn-xs" onclick="addCatOpt('material','pm-nmat','pm-mat')">＋</button></div>
     </div>
+    <div class="fg"><label class="fl">寶石</label>
+      <select class="fc" id="pm-gem"><option value="">無</option>${invGems.map(g=>`<option${p?.gemstone===g?' selected':''}>${g}</option>`).join('')}</select>
+      <div class="flex gap2" style="margin-top:5px"><input class="fc" id="pm-ngem" style="flex:1;padding:6px 10px;font-size:12px" placeholder="新增寶石..."><button class="btn btn-s btn-xs" onclick="addCatOpt('gemstone','pm-ngem','pm-gem')">＋</button></div>
+    </div>
     ${isBoss?`<div class="fg"><label class="fl">成本 (NT$)</label><input class="fc" id="pm-cost" type="number" min="0" value="${p?.cost||''}"></div>`:''}
     <div class="fg"><label class="fl">售價 (NT$) *</label><input class="fc" id="pm-price" type="number" min="0" value="${p?.price||0}"></div>
     <div class="fg"><label class="fl">庫存數量</label><input class="fc" id="pm-stock" type="number" min="0" value="${p?.stock||0}"></div>
     <div class="fg"><label class="fl">商品類型</label>
       <select class="fc" id="pm-dir">
-        <option value="own"${(!p?.direction||p?.direction==='own')?' selected':''}>自有商品</option>
+        <option value="own"${(!p?.direction||p?.direction==='own')?' selected':''}>公司商品</option>
         <option value="in"${p?.direction==='in'?' selected':''}>廠商寄賣（廠商→我）</option>
         <option value="out"${p?.direction==='out'?' selected':''}>外借商品（我→廠商）</option>
       </select>
@@ -664,7 +705,7 @@ window.openProdModal=async(id)=>{
     const borrowDate=dir!=='own'?(document.getElementById('pm-bdate')?.value||''):'';
     const returnDate=dir!=='own'?(document.getElementById('pm-rdate')?.value||''):'';
     const cost=isBoss?parseFloat(document.getElementById('pm-cost').value)||0:null;
-    const payload={name,sku:document.getElementById('pm-sku').value.trim()||null,category:document.getElementById('pm-cat').value,material:document.getElementById('pm-mat').value,price,stock,status:stock<=0?'inactive':'active',description:document.getElementById('pm-desc').value,image1:document.getElementById('pm-img1').value||null,image2:document.getElementById('pm-img2').value||null,direction:dir,borrow_supplier_id:supId||null,is_borrowed:dir!=='own',borrow_date:borrowDate||null,borrow_return_date:returnDate||null,updated_at:new Date().toISOString()};
+    const payload={name,sku:document.getElementById('pm-sku').value.trim()||null,category:document.getElementById('pm-cat').value,material:document.getElementById('pm-mat').value,gemstone:document.getElementById('pm-gem').value||null,price,stock,status:stock<=0?'inactive':'active',gemstone:document.getElementById('pm-gem')?.value||null,description:document.getElementById('pm-desc').value,image1:document.getElementById('pm-img1').value||null,image2:document.getElementById('pm-img2').value||null,direction:dir,borrow_supplier_id:supId||null,is_borrowed:dir!=='own',borrow_date:borrowDate||null,borrow_return_date:returnDate||null,updated_at:new Date().toISOString()};
     if(cost!==null)payload.cost=cost;
     if(p){await sb.from('judy_products').update(payload).eq('id',p.id);}
     else{
@@ -678,7 +719,7 @@ window.openProdModal=async(id)=>{
       // Create borrow record
       if(dir!=='own'&&supId&&nd){
         const sName=invSups.find(s=>s.id===supId)?.name||'';
-        await sb.from('judy_borrow_records').insert({product_id:nd.id,product_name:name,product_sku:nd?.sku||'',supplier_id:supId,supplier_name:sName,direction:dir,status:'borrowed',borrow_date:borrowDate||new Date().toISOString().split('T')[0],expected_return:returnDate||null});
+        await sb.from('judy_borrow_records').insert({product_id:nd.id,product_name:name,product_sku:nd?.sku||'',product_photo:nd?.image1||null,supplier_id:supId,supplier_name:sName,direction:dir,status:'borrowed',borrow_date:borrowDate||new Date().toISOString().split('T')[0],expected_return:returnDate||null});
       }
     }
     flash('ok',p?'商品已更新！':'商品已新增！');closeModal();renderInventory(document.getElementById('pc'));
@@ -704,7 +745,7 @@ async function renderSales(pc){
   saleProdList=p||[];saleCustList=c||[];
   const isBoss=currentUser.role==='boss';const isMgr=currentUser.role==='manager';
   pc.innerHTML=`
-  <div class="flex aic jsb mb3"><div class="ptitle" style="margin:0">🛍️ 銷售記錄</div><button class="btn btn-p" onclick="openSaleModal(null)">＋ 新增銷售</button></div>
+  <div class="flex aic jsb mb3"><div class="ptitle" style="margin:0">🛍️ 銷售記錄</div><div class="flex gap2"><button class="btn btn-s btn-sm" id="sale-export-btn">📥 匯出CSV</button><button class="btn btn-p" onclick="openSaleModal(null)">＋ 新增銷售</button></div></div>
   <div class="sb"><input class="fc" id="sale-s" placeholder="🔍 搜尋..."></div>
   <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
     <thead><tr><th>單號</th><th>日期</th><th>商品</th><th>客戶</th><th>數量</th><th>總計</th><th>收款方式</th><th>銷售員</th><th>操作</th></tr></thead>
@@ -731,6 +772,12 @@ async function renderSales(pc){
   };
   render();
   document.getElementById('sale-s').oninput=render;
+  document.getElementById('sale-export-btn').onclick=()=>{
+    const rows=[['銷售單號','日期','商品','貨號','客戶','數量','單價','折扣','總計','收款方式','銷售員'],
+      ...(allSales||[]).map(s=>[s.sale_no,fmtD(s.sold_at),s.product_name,s.product_sku||'',s.customer_name||'',s.qty,s.unit_price,s.discount,s.total,s.payment_method||'',s.sold_by||''])];
+    const nl='\n';const csv=rows.map(r=>r.map(x=>'"'+String(x==null?'':x)+'"').join(',')).join(nl);
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='銷售記錄_'+new Date().toLocaleDateString('zh-TW')+'.csv';a.click();
+  };
 }
 window.openSaleModal=id=>{
   const sale=id?(saleProdList.find(x=>x.id===id)||null):null;
@@ -903,20 +950,20 @@ async function renderRepairs(pc){
   const SM={pending:{l:'待處理',c:'sc-p'},inprogress:{l:'維修中',c:'sc-i'},done:{l:'已完成',c:'sc-d'}};
   const PS={unpaid:{l:'未付款',c:'ps-unpaid'},deposit:{l:'只收訂金',c:'ps-deposit'},paid:{l:'已付清',c:'ps-paid'}};
   pc.innerHTML=`
-  <div class="flex aic jsb mb3"><div class="ptitle" style="margin:0">🔧 維修保養</div><button class="btn btn-p" onclick="openRepModal(null)">＋ 新增維修單</button></div>
+  <div class="flex aic jsb mb3"><div class="ptitle" style="margin:0">🔧 維修保養</div><div class="flex gap2"><button class="btn btn-s btn-sm" id="rep-export-btn">📥 匯出CSV</button><button class="btn btn-p" onclick="openRepModal(null)">＋ 新增維修單</button></div></div>
   <div class="sb">
     <input class="fc" id="rep-s" placeholder="🔍 搜尋...">
     <select class="fc" id="rep-st" style="max-width:130px"><option value="">全部狀態</option><option value="pending">待處理</option><option value="inprogress">維修中</option><option value="done">已完成</option></select>
   </div>
   <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
-    <thead><tr><th>維修單號</th><th>客戶</th><th>物品</th><th>維修廠商</th><th>狀態</th><th>報價</th><th>付款狀態</th><th>收款方式</th><th>操作</th></tr></thead>
+    <thead><tr><th>維修單號</th><th>客戶</th><th>物品</th><th>維修廠商</th><th>狀態</th><th>報價</th><th>訂金</th><th>尚需付</th><th>付款狀態</th><th>操作</th></tr></thead>
     <tbody id="rep-body"></tbody>
   </table></div></div>`;
   const render=()=>{
     const sv=document.getElementById('rep-s').value.toLowerCase();
     const st=document.getElementById('rep-st').value;
     const f=(reps||[]).filter(r=>(!sv||(r.repair_no?.toLowerCase().includes(sv)||r.customer_name?.toLowerCase().includes(sv)||r.item_desc?.toLowerCase().includes(sv)))&&(!st||r.status===st));
-    document.getElementById('rep-body').innerHTML=f.length===0?`<tr><td colspan="9" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無維修記錄</td></tr>`:
+    document.getElementById('rep-body').innerHTML=f.length===0?`<tr><td colspan="11" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無維修記錄</td></tr>`:
     f.map(r=>`<tr>
       <td><code style="font-size:11px;background:var(--accent-light);padding:2px 5px;border-radius:4px">${r.repair_no}</code></td>
       <td style="font-weight:800">${r.customer_name||'—'}</td>
@@ -924,8 +971,9 @@ async function renderRepairs(pc){
       <td style="font-size:12px">${r.repair_supplier_name||'—'}</td>
       <td><span class="sc ${SM[r.status]?.c||'sc-p'}">${SM[r.status]?.l||'待處理'}</span></td>
       <td>${fmt(r.quote)}</td>
+      <td>${r.deposit>0?fmt(r.deposit):'—'}</td>
+      <td style="color:#c0392b;font-weight:700">${r.quote>0?fmt(Math.max(0,(r.quote||0)-(r.deposit||0))):'—'}</td>
       <td><span class="badge ${PS[r.payment_status||'unpaid']?.c||'ps-unpaid'}">${PS[r.payment_status||'unpaid']?.l||'未付款'}</span></td>
-      <td style="font-size:12px">${r.payment_method||'—'}</td>
       <td><div class="flex gap2">
         <button class="btn btn-s btn-xs" onclick="openRepModal('${r.id}')">✏️</button>
         <button class="btn btn-d btn-xs" onclick="deleteRep('${r.id}','${r.customer_id||''}',${r.final_amount||0})">🗑️</button>
@@ -934,7 +982,19 @@ async function renderRepairs(pc){
   };
   render();
   document.getElementById('rep-s').oninput=render;
+  document.getElementById('rep-export-btn').onclick=()=>{
+    const rows=[['維修單號','客戶','手機','維修物品','問題','維修廠商','報價','訂金','訂金日期','訂金方式','完款','完款日期','完款方式','尚需付','付款狀態','收件日期','完成日期','狀態','備註'],
+      ...(allReps||[]).map(r=>[r.repair_no,r.customer_name||'',r.customer_phone||'',r.item_desc,r.issue||'',r.repair_supplier_name||'',r.quote||0,r.deposit||0,r.deposit_date||'',r.deposit_method||'',r.final_amount||0,r.final_date||'',r.payment_method||'',Math.max(0,(r.quote||0)-(r.deposit||0)-(r.final_amount||0)),r.payment_status==='paid'?'已付清':r.payment_status==='deposit'?'只收訂金':'未付款',r.receive_date||'',r.complete_date||'',r.status==='done'?'已完成':r.status==='inprogress'?'維修中':'待處理',r.note||''])];
+    const nl='\n';const csv=rows.map(r=>r.map(x=>'"'+String(x==null?'':x)+'"').join(',')).join(nl);
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='維修記錄_'+new Date().toLocaleDateString('zh-TW')+'.csv';a.click();
+  };
   document.getElementById('rep-st').onchange=render;
+  document.getElementById('rep-export-btn').onclick=()=>{
+    const rows=[['維修單號','客戶','手機','物品','維修廠商','狀態','報價','訂金','尚需付','付款狀態','訂金日期','訂金方式','完款金額','完款日期','完款方式'],
+      ...(repairs||[]).map(r=>[r.repair_no,r.customer_name||'',r.customer_phone||'',r.item_desc,r.repair_supplier_name||'',r.status,r.quote,r.deposit||0,Math.max(0,(r.quote||0)-(r.deposit||0)),r.payment_status||'unpaid',r.deposit_date||'',r.deposit_payment||'',r.final_payment||0,r.final_payment_date||'',r.final_payment_method||''])];
+    const nl='\n';const csv=rows.map(r=>r.map(x=>'"'+String(x==null?'':x)+'"').join(',')).join(nl);
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='維修記錄_'+new Date().toLocaleDateString('zh-TW')+'.csv';a.click();
+  };
   window.deleteRep=async(id,cid,amt)=>{
     if(!confirm('確定刪除？'))return;
     await sb.from('judy_repairs').delete().eq('id',id);
@@ -964,14 +1024,33 @@ window.openRepModal=async(id)=>{
       <select class="fc" id="rm-sup"><option value="">請選擇</option>${repSups.map(s=>`<option value="${s.id}" data-name="${s.name}"${r?.repair_supplier_id===s.id?' selected':''}>${s.name}</option>`).join('')}</select>
     </div>
     <div class="fg"><label class="fl">維修狀態</label>
-      <select class="fc" id="rm-status"><option value="pending"${r?.status==='pending'||!r?' selected':''}>待處理</option><option value="inprogress"${r?.status==='inprogress'?' selected':''}>維修中</option><option value="done"${r?.status==='done'?' selected':''}>已完成</option></select>
+      <select class="fc" id="rm-status"><option value="pending"${!r||r?.status==='pending'?' selected':''}>待處理</option><option value="inprogress"${r?.status==='inprogress'?' selected':''}>維修中</option><option value="done"${r?.status==='done'?' selected':''}>已完成</option></select>
     </div>
-    <div class="fg"><label class="fl">報價 (NT$)</label><input class="fc" id="rm-quote" type="number" min="0" value="${r?.quote||0}"></div>
-    <div class="fg"><label class="fl">訂金 (NT$)</label><input class="fc" id="rm-dep" type="number" min="0" value="${r?.deposit||0}"></div>
-    <div class="fg"><label class="fl">實收金額 (NT$)</label><input class="fc" id="rm-amt" type="number" min="0" value="${r?.final_amount||0}"></div>
     <div class="fg"><label class="fl">收件日期</label><input class="fc" id="rm-rdate" type="date" value="${r?.receive_date||''}"></div>
     <div class="fg"><label class="fl">預計完成日</label><input class="fc" id="rm-edate" type="date" value="${r?.estimate_date||''}"></div>
     <div class="fg"><label class="fl">完成日期</label><input class="fc" id="rm-cdate" type="date" value="${r?.complete_date||''}"></div>
+  </div>
+  <hr class="dv">
+  <div style="font-size:14px;font-weight:900;color:var(--text);margin-bottom:10px">💰 報價與收款</div>
+  <div class="fgrid">
+    <div class="fg"><label class="fl">維修報價 (NT$)</label><input class="fc" id="rm-quote" type="number" min="0" value="${r?.quote||0}" oninput="updateRepBalance()"></div>
+    <div class="fg" style="display:flex;align-items:flex-end"><div style="width:100%;padding:10px 14px;background:var(--accent-light);border-radius:8px;font-weight:800;font-size:14px;color:var(--accent)" id="rm-balance">尚需付：${r?'NT$'+Math.max(0,(r.quote||0)-(r.deposit||0)-(r.final_amount||0)).toLocaleString('zh-TW'):'NT$0'}</div></div>
+  </div>
+  <div style="background:var(--accent-light);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+    <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px">🟡 訂金記錄</div>
+    <div class="fgrid">
+      <div class="fg"><label class="fl">訂金金額 (NT$)</label><input class="fc" id="rm-dep" type="number" min="0" value="${r?.deposit||0}" oninput="updateRepBalance()"></div>
+      <div class="fg"><label class="fl">訂金收款日期</label><input class="fc" id="rm-dep-date" type="date" value="${r?.deposit_date||''}"></div>
+      <div class="fg"><label class="fl">訂金收款方式</label>${payMethodSelect('rm-dep-pay',r?.deposit_method||'')}</div>
+    </div>
+  </div>
+  <div style="background:rgba(22,163,74,0.06);border:1px solid rgba(22,163,74,0.2);border-radius:10px;padding:12px 14px;margin-bottom:14px">
+    <div style="font-size:13px;font-weight:800;color:#16a34a;margin-bottom:8px">🟢 完款記錄</div>
+    <div class="fgrid">
+      <div class="fg"><label class="fl">完款金額 (NT$)</label><input class="fc" id="rm-amt" type="number" min="0" value="${r?.final_amount||0}" oninput="updateRepBalance()"></div>
+      <div class="fg"><label class="fl">完款日期</label><input class="fc" id="rm-amt-date" type="date" value="${r?.final_date||''}"></div>
+      <div class="fg"><label class="fl">完款收款方式</label>${payMethodSelect('rm-pay',r?.payment_method||'')}</div>
+    </div>
   </div>
   <div class="fg"><label class="fl">付款狀態</label>
     <div class="flex gap2 pay-status-group">
@@ -979,7 +1058,6 @@ window.openRepModal=async(id)=>{
     </div>
     <input type="hidden" id="pay-status-val" value="${r?.payment_status||'unpaid'}">
   </div>
-  <div class="fg"><label class="fl">收款方式</label>${payMethodSelect('rm-pay',r?.payment_method||'')}</div>
   ${imgUploadField('rm-photo',r?.photo||'','維修照片')}
   <div class="fg"><label class="fl">備註</label><textarea class="fc" id="rm-note" rows="2">${r?.note||''}</textarea></div>
   <div class="flex gap2" style="justify-content:flex-end">
@@ -987,8 +1065,18 @@ window.openRepModal=async(id)=>{
     <button class="btn btn-p" id="rm-save">💾 儲存</button>
   </div>`,true);
 
-  // Customer search
-    const cuInp=document.getElementById('rm-cu');const cuDrop=document.getElementById('rm-cu-drop');
+  // 更新尚需付金額
+  window.updateRepBalance=()=>{
+    const q=parseFloat(document.getElementById('rm-quote').value)||0;
+    const dep=parseFloat(document.getElementById('rm-dep').value)||0;
+    const amt=parseFloat(document.getElementById('rm-amt').value)||0;
+    const bal=Math.max(0,q-dep-amt);
+    const el=document.getElementById('rm-balance');
+    if(el)el.textContent='尚需付：NT$'+bal.toLocaleString('zh-TW');
+  };
+
+  // 客戶搜尋
+  const cuInp=document.getElementById('rm-cu');const cuDrop=document.getElementById('rm-cu-drop');
   cuInp.oninput=()=>{
     const v=cuInp.value;document.getElementById('rm-cid').value='';
     if(!v){cuDrop.style.display='none';return;}
@@ -1010,8 +1098,9 @@ window.openRepModal=async(id)=>{
     if(!item){showAlert('rm-a','err','請填寫維修物品');return;}
     const cid=document.getElementById('rm-cid').value;
     const supEl=document.getElementById('rm-sup');
-    const supId=supEl.value;
-    const supName=supEl.options[supEl.selectedIndex]?.dataset.name||'';
+    const supId=supEl.value;const supName=supEl.options[supEl.selectedIndex]?.dataset.name||'';
+    const quote=parseFloat(document.getElementById('rm-quote').value)||0;
+    const dep=parseFloat(document.getElementById('rm-dep').value)||0;
     const finalAmt=parseFloat(document.getElementById('rm-amt').value)||0;
     const pStatus=document.getElementById('pay-status-val').value;
     const payload={
@@ -1021,9 +1110,12 @@ window.openRepModal=async(id)=>{
       item_desc:item,issue:document.getElementById('rm-issue').value,
       status:document.getElementById('rm-status').value,
       repair_supplier_id:supId||null,repair_supplier_name:supName,
-      quote:parseFloat(document.getElementById('rm-quote').value)||0,
-      deposit:parseFloat(document.getElementById('rm-dep').value)||0,
-      final_amount:finalAmt,payment_status:pStatus,
+      quote,deposit:dep,
+      deposit_date:document.getElementById('rm-dep-date').value||null,
+      deposit_method:document.getElementById('rm-dep-pay').value||null,
+      final_amount:finalAmt,
+      final_date:document.getElementById('rm-amt-date').value||null,
+      payment_status:pStatus,
       payment_method:document.getElementById('rm-pay').value,
       receive_date:document.getElementById('rm-rdate').value||null,
       estimate_date:document.getElementById('rm-edate').value||null,
@@ -1039,13 +1131,10 @@ window.openRepModal=async(id)=>{
       payload.repair_no='R'+Date.now().toString().slice(-7);
       await sb.from('judy_repairs').insert(payload);
     }
+    // 更新客戶累積消費（只計完款金額變動）
     if(cid&&finalAmt>=0){
       const{data:cu}=await sb.from('judy_customers').select('*').eq('id',cid).maybeSingle();
-      if(cu){
-        const ns=Math.max(0,(cu.total_spent||0)-oldAmt+finalAmt);
-        const lv=getLevel(ns);
-        await sb.from('judy_customers').update({total_spent:ns,...(!cu.level_override?{level:lv.k}:{})}).eq('id',cid);
-      }
+      if(cu){const ns=Math.max(0,(cu.total_spent||0)-oldAmt+finalAmt);const lv=getLevel(ns);await sb.from('judy_customers').update({total_spent:ns,...(!cu.level_override?{level:lv.k}:{})}).eq('id',cid);}
     }
     flash('ok',r?'維修單已更新':'維修單已建立');
     closeModal();renderRepairs(document.getElementById('pc'));
