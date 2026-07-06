@@ -1371,7 +1371,7 @@ async function renderUsers(pc){
     if(isBoss) roles=[{v:'boss',l:'⭐ 老闆'},{v:'manager',l:'🔰 主管'},{v:'staff',l:'💼 員工'}];
     else if(isMgr) roles=[{v:'manager',l:'🔰 主管'},{v:'staff',l:'💼 員工'}];
     // 主管不能編輯其他主管
-    const canEditThis=isBoss||(isMgr&&(u?.role==='staff'||!u));
+    const canEditThis=isBoss||(isMgr&&(u?.role==='staff'||!u||u?.id===currentUser.id));
     if(!canEditThis&&id){flash('err','無權限編輯此帳號');return;}
 
     openModal(u?`編輯帳號 — ${u.display_name}`:'建立新帳號',`
