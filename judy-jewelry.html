@@ -352,11 +352,8 @@ function renderLayout(app){
     </div>
     <div class="nav" id="nav-list"></div>
     <div class="user-area">
-      <div class="user-name">👤 ${currentUser.display_name}</div>
-      <div class="user-role">${{boss:'⭐ 老闆',manager:'🔰 主管',staff:'💼 員工'}[currentUser.role]}</div>
-      <div class="theme-btns" style="margin-top:8px">${Object.entries(THEMES).map(([k,v])=>`<div class="theme-btn" data-t="${k}" title="${v.title}" style="background:${k==='white'?'#fff':k==='rose'?'linear-gradient(135deg,#f5d0d8,#c9856a)':k==='latte'?'linear-gradient(135deg,#ece0d0,#c8a050)':'linear-gradient(135deg,#e4dcf8,#8070c8)'}" onclick="applyTheme('${k}')"></div>`).join('')}</div>
-      <button class="ua-btn" id="pwd-btn">🔑 修改密碼</button>
-      
+      <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">🎨 主題</div>
+      <div class="theme-btns">${Object.entries(THEMES).map(([k,v])=>`<div class="theme-btn" data-t="${k}" title="${k}" style="background:${k==='white'?'#fff':k==='rose'?'linear-gradient(135deg,#f5d0d8,#c9856a)':k==='latte'?'linear-gradient(135deg,#ece0d0,#c8a050)':'linear-gradient(135deg,#e4dcf8,#8070c8)'}" onclick="applyTheme('${k}')"></div>`).join('')}</div>
     </div>
   </nav>
   <div class="main">
@@ -392,7 +389,6 @@ function renderLayout(app){
 
   document.getElementById('logout-btn').onclick=()=>{clearS();currentUser=null;renderApp();};
   // 移除舊的 pwd-btn（已移入帳號管理）
-  // 修改密碼已移入帳號管理編輯
   document.getElementById('menu-btn').onclick=()=>toggleSidebar();
   document.getElementById('mob-ov').onclick=()=>toggleSidebar(false);
   if(isBoss){
