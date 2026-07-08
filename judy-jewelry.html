@@ -339,7 +339,7 @@ function renderLayout(app){
     {id:'customers',icon:'👤',label:'客戶資料庫'},
     {id:'repairs',icon:'🔧',label:'維修保養'},
     ...((isBoss||isMgr)?[{id:'reports',icon:'📈',label:'報表分析'}]:[]),
-    ...((isBoss||isMgr)?[{id:'users',icon:'👥',label:'帳號管理'}]:[]),
+    {id:'users',icon:'👥',label:'帳號管理'},
   ];
   app.innerHTML=`
   <div class="sheen-layer"></div>
