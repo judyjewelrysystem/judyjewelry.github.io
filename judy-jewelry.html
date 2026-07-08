@@ -527,7 +527,7 @@ async function renderInventory(pc){
     sb.from('judy_products').select('*').order('created_at',{ascending:false}),
     sb.from('judy_suppliers').select('*').order('name'),
     sb.from('judy_categories').select('*').order('name'),
-    sb.from('judy_borrow_records').select('product_id,status,direction,actual_return,borrow_date,expected_return').order('created_at',{ascending:false})
+    sb.from('judy_borrow_records').select('product_id,status,direction,actual_return,borrow_date,expected_return,created_at,supplier_id,supplier_name').order('created_at',{ascending:false})
   ]);
   // 建立 product_id → 最新 borrow record 的對照
   // 優先顯示最新的 borrowed 狀態，若都歸還則顯示最新一筆
@@ -555,12 +555,12 @@ async function renderInventory(pc){
     <input class="fc" id="inv-s" placeholder="🔍 搜尋名稱、貨號...">
     <select class="fc" id="inv-c" style="max-width:150px"><option value="">所有類別</option>${invCats.map(c=>`<option>${c}</option>`).join('')}</select>
     <select class="fc" id="inv-st" style="max-width:120px"><option value="">全部狀態</option><option value="active">上架</option><option value="inactive">下架</option></select>
-    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-      <span style="font-size:12px;font-weight:700;color:var(--text3)">類型：</span>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap"><input type="checkbox" id="inv-t-own" checked onchange="renderInvRows()"> 公司</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap"><input type="checkbox" id="inv-t-in" checked onchange="renderInvRows()"> 廠商寄賣</label>
-      <label style="display:flex;align-items:center;gap:4px;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap"><input type="checkbox" id="inv-t-out" checked onchange="renderInvRows()"> 外借商品</label>
-    </div>
+    <select class="fc" id="inv-type" style="max-width:130px" onchange="renderInvRows()">
+      <option value="">全部類型</option>
+      <option value="own">公司</option>
+      <option value="in">廠商寄賣</option>
+      <option value="out">外借商品</option>
+    </select>
     <button class="btn btn-s btn-sm" onclick="exportInvCSV()">📥 匯出CSV</button>
   </div>
   <div class="card" style="padding:0;overflow:hidden"><div class="tw"><table>
@@ -573,21 +573,24 @@ async function renderInventory(pc){
     const s=document.getElementById('inv-s').value.toLowerCase();
     const c=document.getElementById('inv-c').value;
     const st=document.getElementById('inv-st').value;
-    const tOwn=document.getElementById('inv-t-own')?.checked!==false;
-    const tIn=document.getElementById('inv-t-in')?.checked!==false;
-    const tOut=document.getElementById('inv-t-out')?.checked!==false;
+    const typeFilter=document.getElementById('inv-type')?.value||'';
     const f=invProds.filter(p=>{
       const dir=p.direction||'own';
       return (!s||(p.name?.toLowerCase().includes(s)||p.sku?.toLowerCase().includes(s)))
         &&(!c||p.category===c)&&(!st||p.status===st)
-        &&((dir==='own'&&tOwn)||(dir==='in'&&tIn)||(dir==='out'&&tOut));
+        &&(!typeFilter||dir===typeFilter);
+    }).sort((a,b)=>{
+      // 下架商品排最後
+      if(a.status==='active'&&b.status!=='active') return -1;
+      if(a.status!=='active'&&b.status==='active') return 1;
+      return 0;
     });
     document.getElementById('inv-body').innerHTML=f.length===0?`<tr><td colspan="${isBoss?15:14}" style="text-align:center;padding:28px;color:var(--text3);font-weight:700">暫無商品</td></tr>`:
     f.map(p=>`<tr>
       <td><code style="font-size:11px;background:var(--accent-light);padding:2px 6px;border-radius:4px">${p.sku||'—'}</code></td>
       <td>${p.image1?`<img src="${p.image1}" style="width:42px;height:42px;object-fit:cover;border-radius:8px">`:'<span style="color:var(--text3);font-size:11px">無</span>'}</td>
       <td style="font-weight:800">${p.name}</td>
-      <td>${p.category||'—'}</td><td>${p.material||'—'}</td><td>${p.gemstone||'—'}</td><td>${p.gemstone||'—'}</td>
+      <td>${p.category||'—'}</td><td>${p.material||'—'}</td><td>${p.gemstone||'—'}</td>
       ${isBoss?`<td>${p.cost?fmt(p.cost):'<span style="color:#ef4444;font-size:11px">未填</span>'}</td>`:''}
       <td style="font-weight:800;color:var(--accent)">${fmt(p.price)}</td>
       <td style="font-weight:800">${p.stock}</td>
@@ -634,8 +637,19 @@ async function renderInventory(pc){
   document.getElementById('inv-c').onchange=render;
   document.getElementById('inv-st').onchange=render;
   window.exportInvCSV=()=>{
-    const rows=[['貨號','商品名稱','類別','材質','寶石','售價','庫存','類型','廠商','借出日期','預計歸還','狀態'],
-      ...invProds.map(p=>{const br=borrowMap[p.id];const dir=p.direction||'own';const sup=dir!=='own'?(invSups.find(s=>s.id===p.borrow_supplier_id)?.name||''):'';return[p.sku||'',p.name,p.category||'',p.material||'',p.gemstone||'',p.price,p.stock,dir==='in'?'廠商寄賣':dir==='out'?'外借商品':'公司',sup,br?.borrow_date||'',br?.expected_return||'',p.status==='active'?'上架':'下架'];})];
+    // 依目前篩選條件匯出
+    const s=document.getElementById('inv-s').value.toLowerCase();
+    const cv=document.getElementById('inv-c').value;
+    const st=document.getElementById('inv-st').value;
+    const typeFilter=document.getElementById('inv-type')?.value||'';
+    const filtered=invProds.filter(p=>{
+      const dir=p.direction||'own';
+      return (!s||(p.name?.toLowerCase().includes(s)||p.sku?.toLowerCase().includes(s)))
+        &&(!cv||p.category===cv)&&(!st||p.status===st)
+        &&(!typeFilter||dir===typeFilter);
+    });
+    const rows=[['貨號','商品名稱','類別','材質','寶石','成本','售價','庫存','類型','廠商','借出日期','預計歸還','狀態'],
+      ...filtered.map(p=>{const br=borrowMap[p.id];const dir=p.direction||'own';const sup=dir!=='own'?(invSups.find(s=>s.id===p.borrow_supplier_id)?.name||''):'';return[p.sku||'',p.name,p.category||'',p.material||'',p.gemstone||'',p.cost||'',p.price,p.stock,dir==='in'?'廠商寄賣':dir==='out'?'外借商品':'公司',sup,br?.borrow_date||'',br?.expected_return||'',p.status==='active'?'上架':'下架'];})];
     const nl='\n';const csv=rows.map(r=>r.map(x=>'"'+String(x==null?'':x)+'"').join(',')).join(nl);
     const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);a.download='庫存清單_'+new Date().toLocaleDateString('zh-TW')+'.csv';a.click();
   };
@@ -701,7 +715,7 @@ window.openProdModal=async(id)=>{
     const borrowDate=dir!=='own'?(document.getElementById('pm-bdate')?.value||''):'';
     const returnDate=dir!=='own'?(document.getElementById('pm-rdate')?.value||''):'';
     const cost=isBoss?parseFloat(document.getElementById('pm-cost').value)||0:null;
-    const payload={name,sku:document.getElementById('pm-sku').value.trim()||null,category:document.getElementById('pm-cat').value,material:document.getElementById('pm-mat').value,gemstone:document.getElementById('pm-gem').value||null,price,stock,status:stock<=0?'inactive':'active',gemstone:document.getElementById('pm-gem')?.value||null,description:document.getElementById('pm-desc').value,image1:document.getElementById('pm-img1').value||null,image2:document.getElementById('pm-img2').value||null,direction:dir,borrow_supplier_id:supId||null,is_borrowed:dir!=='own',borrow_date:borrowDate||null,borrow_return_date:returnDate||null,updated_at:new Date().toISOString()};
+    const payload={name,sku:document.getElementById('pm-sku').value.trim()||null,category:document.getElementById('pm-cat').value,material:document.getElementById('pm-mat').value,gemstone:document.getElementById('pm-gem')?.value||null,price,stock,status:stock<=0?'inactive':'active',description:document.getElementById('pm-desc').value,image1:document.getElementById('pm-img1').value||null,image2:document.getElementById('pm-img2').value||null,direction:dir,borrow_supplier_id:supId||null,is_borrowed:dir!=='own',borrow_date:borrowDate||null,borrow_return_date:returnDate||null,updated_at:new Date().toISOString()};
     if(cost!==null)payload.cost=cost;
     if(p){await sb.from('judy_products').update(payload).eq('id',p.id);}
     else{
@@ -718,7 +732,24 @@ window.openProdModal=async(id)=>{
         await sb.from('judy_borrow_records').insert({product_id:nd.id,product_name:name,product_sku:nd?.sku||'',product_photo:nd?.image1||null,supplier_id:supId,supplier_name:sName,direction:dir,status:'borrowed',borrow_date:borrowDate||new Date().toISOString().split('T')[0],expected_return:returnDate||null});
       }
     }
-    flash('ok',p?'商品已更新！':'商品已新增！');closeModal();renderInventory(document.getElementById('pc'));
+    flash('ok',p?'商品已更新！':'商品已新增！');
+    closeModal();
+    // 若有借貸資訊，同步更新 borrow_records
+    if(p&&dir!=='own'&&supId){
+      // 編輯時更新最新的 borrow_record 日期
+      const{data:latestBr}=await sb.from('judy_borrow_records')
+        .select('id').eq('product_id',p.id).eq('status','borrowed')
+        .order('created_at',{ascending:false}).limit(1).maybeSingle();
+      if(latestBr){
+        await sb.from('judy_borrow_records').update({
+          borrow_date:borrowDate||null,
+          expected_return:returnDate||null,
+          supplier_id:supId||null,
+          supplier_name:invSups.find(s=>s.id===supId)?.name||''
+        }).eq('id',latestBr.id);
+      }
+    }
+    renderInventory(document.getElementById('pc'));
   };
 };
 window.deleteProd=async id=>{if(!confirm('確定刪除？'))return;await sb.from('judy_products').delete().eq('id',id);flash('ok','已刪除');renderInventory(document.getElementById('pc'));};
