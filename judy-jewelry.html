@@ -603,7 +603,8 @@ async function renderInventory(pc){
         // 廠商名稱
         const supName=dir!=='own'?(invSups.find(s=>s.id===p.borrow_supplier_id)?.name||'—'):'—';
         // 借出日期
-        const borrowDate=br?.borrow_date?fmtD(br.borrow_date):(p.borrow_date?fmtD(p.borrow_date):'—');
+        // 優先用 products 表的 borrow_date（使用者最後儲存的）
+        const borrowDate=p.borrow_date?fmtD(p.borrow_date):(br?.borrow_date?fmtD(br.borrow_date):'—');
         // 預計歸還/實際歸還/狀態
         let dateCell='—';let statusExtra='';
         if(dir!=='own'){
@@ -611,12 +612,14 @@ async function renderInventory(pc){
             dateCell='<span style="color:#16a34a;font-weight:700">✅ '+fmtD(br?.actual_return)+'（已歸還）</span>';
           } else if(brStatus==='sold_pending'){
             dateCell='<span style="color:#7c3aed;font-weight:700">💰 待結算</span>';
-          } else if(br?.expected_return){
-            const over=new Date(br.expected_return);over.setHours(23,59,59,999);
-            if(over<new Date()) dateCell='<span style="color:#c0392b;font-weight:700">⚠️ '+fmtD(br.expected_return)+'（逾期）</span>';
-            else dateCell=fmtD(br.expected_return);
-          } else if(p.borrow_return_date){
-            dateCell=fmtD(p.borrow_return_date);
+          } else {
+            // 優先用 products.borrow_return_date（最新儲存），其次 borrow_records
+            const retDate=p.borrow_return_date||br?.expected_return||null;
+            if(retDate){
+              const over=new Date(retDate);over.setHours(23,59,59,999);
+              if(over<new Date()) dateCell='<span style="color:#c0392b;font-weight:700">⚠️ '+fmtD(retDate)+'（逾期）</span>';
+              else dateCell=fmtD(retDate);
+            }
           }
           // 狀態額外標籤
           if(brStatus==='returned') statusExtra='<span class="badge b-ret" style="font-size:10px;margin-left:3px">已歸還</span>';
@@ -735,18 +738,23 @@ window.openProdModal=async(id)=>{
     flash('ok',p?'商品已更新！':'商品已新增！');
     closeModal();
     // 若有借貸資訊，同步更新 borrow_records
-    if(p&&dir!=='own'&&supId){
-      // 編輯時更新最新的 borrow_record 日期
+    if(p&&dir!=='own'){
+      // 編輯時更新最新的 borrow_record 日期（不管 supId 是否有值）
       const{data:latestBr}=await sb.from('judy_borrow_records')
         .select('id').eq('product_id',p.id).eq('status','borrowed')
         .order('created_at',{ascending:false}).limit(1).maybeSingle();
       if(latestBr){
-        await sb.from('judy_borrow_records').update({
-          borrow_date:borrowDate||null,
-          expected_return:returnDate||null,
-          supplier_id:supId||null,
-          supplier_name:invSups.find(s=>s.id===supId)?.name||''
-        }).eq('id',latestBr.id);
+        const brUpdate={borrow_date:borrowDate||null,expected_return:returnDate||null};
+        if(supId){brUpdate.supplier_id=supId;brUpdate.supplier_name=invSups.find(s=>s.id===supId)?.name||'';}
+        await sb.from('judy_borrow_records').update(brUpdate).eq('id',latestBr.id);
+      } else if(supId){
+        // 沒有 borrow_records 就新建一筆
+        const sName=invSups.find(s=>s.id===supId)?.name||'';
+        await sb.from('judy_borrow_records').insert({
+          product_id:p.id,product_name:p.name,product_sku:p.sku||'',product_photo:p.image1||null,
+          supplier_id:supId,supplier_name:sName,direction:dir,status:'borrowed',
+          borrow_date:borrowDate||new Date().toISOString().split('T')[0],expected_return:returnDate||null
+        });
       }
     }
     renderInventory(document.getElementById('pc'));
